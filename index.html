@@ -13856,7 +13856,14 @@ function resetForm(){
 function cancelForm(){ editingId=null; goBack(); }
 function generateCode(){ const code='ART-'+Date.now().toString(36).toUpperCase().slice(-6); document.getElementById('a-code').value=code; generateQRPreview(code); }
 window.addEventListener('DOMContentLoaded',()=>{ const ci=document.getElementById('a-code'); if(ci) ci.addEventListener('input',()=>{ const v=ci.value.trim(); if(v) generateQRPreview(v); else document.getElementById('qr-preview-card').style.display='none'; }); });
-function generateQRPreview(text){ if(!text) return; const el=document.getElementById('qr-gen-el'); el.innerHTML=''; qrFormInst=new QRCode(el,{text:JSON.stringify({codigo:text,app:'Inventario Pro'}),width:160,height:160,colorDark:'#111',colorLight:'#fff',correctLevel:QRCode.CorrectLevel.H}); document.getElementById('qr-preview-card').style.display='block'; }
+function generateQRPreview(text){
+  if(!text) return;
+  const el=document.getElementById('qr-gen-el');
+  el.innerHTML='';
+  qrFormInst=new QRCode(el,{text:text,width:160,height:160,
+    colorDark:'#111',colorLight:'#fff',correctLevel:QRCode.CorrectLevel.M});
+  document.getElementById('qr-preview-card').style.display='block';
+}
 function downloadQR(){ const c=document.querySelector('#qr-gen-el canvas'); if(!c) return; const a=document.createElement('a'); a.download='QR-'+(document.getElementById('a-code').value||'art')+'.png'; a.href=c.toDataURL(); a.click(); }
 function handlePhotos(e){ const files=Array.from(e.target.files); if(addPhotos.length+files.length>6){ showToast('Máximo 6 fotos'); return; } files.forEach(f=>{ const r=new FileReader(); r.onload=ev=>{ addPhotos.push({file:f,preview:ev.target.result}); renderPhotosGrid(); }; r.readAsDataURL(f); }); e.target.value=''; }
 function renderPhotosGrid(){ const g=document.getElementById('photos-preview'); if(!addPhotos.length){ g.style.display='none'; return; } g.style.display='grid'; g.innerHTML=addPhotos.map((p,i)=>`<div class="photo-thumb"><img src="${p.preview}" alt="foto"><button class="photo-del" onclick="removePhoto(${i})"><i class="ti ti-x"></i></button></div>`).join(''); }
@@ -13911,7 +13918,8 @@ function openDetail(id){
   let extra=''; if(item.fecha_adq) extra+=`<div class="m-extra-row"><i class="ti ti-calendar-plus"></i>Adquirido: <strong>${fmtDate(item.fecha_adq)}</strong></div>`; if(item.creado_por) extra+=`<div class="m-extra-row"><i class="ti ti-user"></i>Registrado por: <strong>${item.creado_por}</strong></div>`; document.getElementById('m-extra').innerHTML=extra;
   document.getElementById('m-photos').innerHTML=item.fotos&&item.fotos.length>1?`<div class="m-section-title">Fotos (${item.fotos.length})</div><div class="modal-photos">${item.fotos.map(f=>`<img src="${f}" alt="foto">`).join('')}</div>`:'';
   const qrEl=document.getElementById('m-qr'); qrEl.innerHTML='';
-  qrModalInst=new QRCode(qrEl,{text:JSON.stringify({codigo:item.codigo||item.id,nombre:item.nombre,app:'Inventario Pro'}),width:160,height:160,colorDark:'#111',colorLight:'#fff',correctLevel:QRCode.CorrectLevel.H});
+  qrModalInst=new QRCode(qrEl,{text:item.codigo||item.id,width:160,height:160,
+    colorDark:'#111',colorLight:'#fff',correctLevel:QRCode.CorrectLevel.M});
   openModal('m-detail');
 }
 function dlModalQR(){ const c=document.querySelector('#m-qr canvas'); if(!c) return; const item=inventory.find(i=>i.id===modalItemId); const a=document.createElement('a'); a.download='QR-'+(item?item.codigo||item.id:'art')+'.png'; a.href=c.toDataURL(); a.click(); }
