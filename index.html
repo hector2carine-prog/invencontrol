@@ -972,10 +972,11 @@ document.addEventListener("DOMContentLoaded",function(){
       <div class="m-section-title">Código QR</div>
       <div class="m-qr-wrap" id="m-qr"></div>
       <div class="modal-actions">
-        <button class="ma-btn green" onclick="dlModalQR()">  <i class="ti ti-download"></i><span>QR</span></button>
-        <button class="ma-btn blue"  onclick="editCurrent()"> <i class="ti ti-edit"></i><span>Editar</span></button>
-        <button class="ma-btn amber" onclick="editEstado()">  <i class="ti ti-refresh"></i><span>Estado</span></button>
-        <button class="ma-btn red"   onclick="deleteItem()">  <i class="ti ti-trash"></i><span>Eliminar</span></button>
+        <button class="ma-btn green" onclick="dlModalQR()"><span>⬇ QR</span></button>
+        <button class="ma-btn green" onclick="printModalQR()" style="background:#16a34a"><span>🖨 Imprimir</span></button>
+        <button class="ma-btn blue"  onclick="editCurrent()"><span>✏️ Editar</span></button>
+        <button class="ma-btn amber" onclick="editEstado()"><span>↺ Estado</span></button>
+        <button class="ma-btn red"   onclick="deleteItem()"><span>🗑 Eliminar</span></button>
       </div>
     </div>
   </div>
@@ -13922,7 +13923,37 @@ function openDetail(id){
     colorDark:'#111',colorLight:'#fff',correctLevel:QRCode.CorrectLevel.M});
   openModal('m-detail');
 }
-function dlModalQR(){ const c=document.querySelector('#m-qr canvas'); if(!c) return; const item=inventory.find(i=>i.id===modalItemId); const a=document.createElement('a'); a.download='QR-'+(item?item.codigo||item.id:'art')+'.png'; a.href=c.toDataURL(); a.click(); }
+function dlModalQR(){
+  const c=document.querySelector('#m-qr canvas');
+  if(!c) return;
+  const item=inventory.find(i=>i.id===modalItemId);
+  const a=document.createElement('a');
+  a.download='QR-'+(item?item.codigo||item.nombre||item.id:'art')+'.png';
+  a.href=c.toDataURL();
+  a.click();
+}
+
+function printModalQR(){
+  const c=document.querySelector('#m-qr canvas');
+  if(!c) return;
+  const item=inventory.find(i=>i.id===modalItemId);
+  const nombre=item?item.nombre:'Artículo';
+  const codigo=item?item.codigo||item.id:'';
+  const imgData=c.toDataURL();
+  const win=window.open('','_blank');
+  win.document.write(`<!DOCTYPE html><html><head><title>QR - ${nombre}</title>
+    <style>body{font-family:sans-serif;text-align:center;padding:20px}
+    img{width:200px;height:200px;display:block;margin:0 auto 10px}
+    h3{margin:0 0 4px;font-size:16px}p{margin:0;font-size:13px;color:#666}
+    @media print{button{display:none}}</style></head>
+    <body>
+    <img src="${imgData}">
+    <h3>${nombre}</h3>
+    <p>${codigo}</p>
+    <br><button onclick="window.print()">Imprimir</button>
+    </body></html>`);
+  win.document.close();
+}
 function editCurrent(){ if(currentUser.rol==='viewer'){ showToast('Sin permisos.'); return; } const item=inventory.find(i=>i.id===modalItemId); if(!item) return; closeModal('m-detail'); editingId=modalItemId; goScreen('add'); setTimeout(()=>populateForm(item),200); }
 function populateForm(item){ document.getElementById('a-code').value=item.codigo||''; document.getElementById('a-name').value=item.nombre||''; document.getElementById('a-cat').value=item.categoria||''; document.getElementById('a-qty').value=item.cantidad||1; document.getElementById('a-est').value=item.estado||'Operativo'; document.getElementById('a-price').value=item.precio||''; document.getElementById('a-date').value=item.fecha_adq||''; document.getElementById('a-obs').value=item.observaciones||''; document.getElementById('a-lugar').value=item.lugar_id||''; document.getElementById('hdr-title').textContent='Editar artículo'; document.getElementById('save-label').textContent='Guardar cambios'; if(item.codigo) generateQRPreview(item.codigo); addPhotos=[]; renderPhotosGrid(); }
 async function editEstado(){ if(currentUser.rol==='viewer'){ showToast('Sin permisos.'); return; } const item=inventory.find(i=>i.id===modalItemId); if(!item) return; const estados=['Operativo','Mantención','Revisión','Dado de baja']; const v=prompt(`Estado de "${item.nombre}":\n1. Operativo\n2. Mantención\n3. Revisión\n4. Dado de baja\n\nActual: ${item.estado}\nIngresa número (1-4):`,estados.indexOf(item.estado)+1); if(!v) return; const n=parseInt(v)-1; if(n<0||n>3){ showToast('Opción inválida'); return; } const {error}=await sb.from('articulos').update({estado:estados[n]}).eq('id',item.id); if(error){ showToast('Error.'); return; } item.estado=estados[n]; closeModal('m-detail'); renderLugarItems(); renderInventario(); renderLugares(); showToast('Estado actualizado'); }
@@ -13951,8 +13982,91 @@ async function saveLugar(){
 }
 function renderLugaresAdmin(){
   const body=document.getElementById('lugares-admin-list');
-  if(!lugares.length){ body.innerHTML='<div class="empty-state"><i class="ti ti-map-pin"></i><p>Sin lugares aún.</p></div>'; return; }
-  body.innerHTML=lugares.map(l=>{ const cnt=inventory.filter(i=>i.lugar_id===l.id).length; return `<div class="lugar-admin-card"><div class="lac-icon" style="background:${hexToLight(l.color||'#111')}"><i class="ti ${l.icono||'ti-building-warehouse'}" style="color:${l.color||'#111'};font-size:18px" aria-hidden="true"></i></div><div class="lac-info"><div class="lac-name">${l.nombre}</div>${l.descripcion?`<div class="lac-desc">${l.descripcion}</div>`:''}</div><div class="lac-right"><span class="lac-cnt">${cnt} art.</span><button class="btn-del-lugar" onclick="deleteLugar('${l.id}')"><i class="ti ti-trash"></i></button></div></div>`; }).join('');
+  if(!lugares.length){ body.innerHTML='<div class="empty-state"><p>Sin lugares aún.</p></div>'; return; }
+  body.innerHTML=lugares.map(l=>{
+    const cnt=inventory.filter(i=>i.lugar_id===l.id).length;
+    return `<div class="lugar-admin-card">
+      <div class="lac-icon" style="background:${hexToLight(l.color||'#111')}">
+        <i class="ti ${l.icono||'ti-building-warehouse'}" style="color:${l.color||'#111'};font-size:18px"></i>
+      </div>
+      <div class="lac-info">
+        <div class="lac-name">${l.nombre}</div>
+        ${l.descripcion?`<div class="lac-desc">${l.descripcion}</div>`:''}
+        ${l.subdivisiones?`<div style="font-size:11px;color:var(--ink3)">Subdivisiones: ${l.subdivisiones}</div>`:''}
+      </div>
+      <div class="lac-right">
+        <span class="lac-cnt">${cnt} art.</span>
+        <button class="btn-sec sm" style="padding:5px 10px;font-size:12px" onclick="openEditLugar('${l.id}')">✏️</button>
+        <button class="btn-del-lugar" onclick="deleteLugar('${l.id}')">🗑</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function openEditLugar(id){
+  const l=lugares.find(x=>x.id===id);
+  if(!l) return;
+  // Mostrar modal de edición
+  let modal=document.getElementById('m-edit-lugar');
+  if(!modal){
+    modal=document.createElement('div');
+    modal.id='m-edit-lugar';
+    modal.className='modal-ov';
+    modal.innerHTML=`
+      <div class="modal-sh" style="max-height:85%">
+        <div class="modal-handle"></div>
+        <div class="modal-body">
+          <div class="m-title">Editar lugar</div>
+          <div class="field" style="margin-top:14px">
+            <label>Nombre *</label>
+            <input type="text" id="el-nombre" placeholder="Nombre del lugar">
+          </div>
+          <div class="field">
+            <label>Descripción</label>
+            <input type="text" id="el-desc" placeholder="Descripción breve">
+          </div>
+          <div class="field">
+            <label>Subdivisiones (ej: Estante A, Estante B)</label>
+            <input type="text" id="el-subdiv" placeholder="Ej: Sector 1, Sector 2, Bodega...">
+          </div>
+          <div id="el-err" class="alert-box" style="display:none;margin-bottom:10px">
+            <span id="el-err-txt"></span>
+          </div>
+          <div class="btn-pair">
+            <button class="btn-sec" onclick="closeModal('m-edit-lugar')">Cancelar</button>
+            <button class="btn-pri" onclick="saveEditLugar()">Guardar</button>
+          </div>
+        </div>
+      </div>`;
+    modal.onclick=e=>{ if(e.target===modal) closeModal('m-edit-lugar'); };
+    document.body.appendChild(modal);
+  }
+  document.getElementById('el-nombre').value=l.nombre||'';
+  document.getElementById('el-desc').value=l.descripcion||'';
+  document.getElementById('el-subdiv').value=l.subdivisiones||'';
+  modal._editId=id;
+  openModal('m-edit-lugar');
+}
+
+async function saveEditLugar(){
+  const modal=document.getElementById('m-edit-lugar');
+  const id=modal._editId;
+  const nombre=(document.getElementById('el-nombre').value||'').trim();
+  const descripcion=(document.getElementById('el-desc').value||'').trim();
+  const subdivisiones=(document.getElementById('el-subdiv').value||'').trim();
+  if(!nombre){
+    document.getElementById('el-err').style.display='flex';
+    document.getElementById('el-err-txt').textContent='El nombre es obligatorio.';
+    return;
+  }
+  const {error}=await sb.from('lugares').update({nombre,descripcion,subdivisiones}).eq('id',id);
+  if(error){ showToast('Error al guardar.'); return; }
+  const l=lugares.find(x=>x.id===id);
+  if(l){ l.nombre=nombre; l.descripcion=descripcion; l.subdivisiones=subdivisiones; }
+  closeModal('m-edit-lugar');
+  renderLugaresAdmin();
+  renderLugares();
+  showToast('✓ Lugar actualizado');
 }
 async function deleteLugar(id){ const l=lugares.find(x=>x.id===id); if(!l) return; const cnt=inventory.filter(i=>i.lugar_id===id).length; if(!confirm(`¿Eliminar "${l.nombre}"?${cnt>0?`\n${cnt} artículo${cnt>1?'s':''} quedarán sin lugar.`:''}`)) return; const {error}=await sb.from('lugares').delete().eq('id',id); if(error){ showToast('Error.'); return; } lugares=lugares.filter(x=>x.id!==id); inventory.forEach(i=>{ if(i.lugar_id===id){ i.lugar_id=null; i.lugar_nombre=null; } }); fillDataLists(); renderLugaresAdmin(); renderLugares(); showToast('Lugar eliminado'); }
 
@@ -14008,10 +14122,149 @@ function showUsersPanel(){ closeUM(); renderUsersList(); goScreen('users'); }
 async function renderUsersList(){
   const {data}=await sb.from('usuarios').select('*').order('creado_at');
   const rows=(data||[]).map(u=>{
-    const del=u.id!==currentUser.id?`<button class="btn-del-user" onclick="delUser('${u.id}')">🗑</button>`:'';
-    return `<div class="user-row"><div><div class="ur-name">${u.nombre}</div><div class="ur-meta">@${u.usuario}</div></div><div style="display:flex;align-items:center;gap:8px"><span class="role-pill rp-${u.rol}">${roleLabel(u.rol)}</span>${del}</div></div>`;
+    const isMe=u.id===currentUser.id;
+    return `<div class="user-row" style="flex-direction:column;align-items:stretch;gap:8px;padding:14px">
+      <div style="display:flex;align-items:center;gap:10px">
+        <div style="width:38px;height:38px;border-radius:50%;background:var(--blue-l);
+          display:flex;align-items:center;justify-content:center;font-weight:700;
+          color:var(--blue);font-size:15px">${(u.nombre||'?')[0].toUpperCase()}</div>
+        <div style="flex:1">
+          <div class="ur-name">${u.nombre}</div>
+          <div class="ur-meta">@${u.usuario} · <span class="role-pill rp-${u.rol}">${roleLabel(u.rol)}</span></div>
+        </div>
+        ${!isMe?`<button class="btn-del-user" onclick="delUser('${u.id}')" title="Eliminar">🗑</button>`:'<span style="font-size:11px;color:var(--ink3)">(tú)</span>'}
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn-sec sm" style="font-size:12px;padding:5px 10px"
+          onclick="openResetPass('${u.id}','${u.nombre.replace(/'/g,"\\'")}')">
+          🔑 Cambiar contraseña
+        </button>
+        <button class="btn-sec sm" style="font-size:12px;padding:5px 10px"
+          onclick="openEditUser('${u.id}','${u.nombre.replace(/'/g,"\\'")}','${u.usuario}','${u.rol}')">
+          ✏️ Editar
+        </button>
+      </div>
+    </div>`;
   }).join('');
-  document.getElementById('users-list-panel').innerHTML=`<div class="users-list-card">${rows}</div>`;
+  document.getElementById('users-list-panel').innerHTML=
+    `<div class="users-list-card">${rows}</div>`;
+}
+
+function openResetPass(userId, userName){
+  let modal=document.getElementById('m-admin-reset');
+  if(!modal){
+    modal=document.createElement('div');
+    modal.id='m-admin-reset';
+    modal.className='modal-ov';
+    modal.innerHTML=`
+      <div class="modal-sh" style="max-height:70%">
+        <div class="modal-handle"></div>
+        <div class="modal-body">
+          <div class="m-title">Cambiar contraseña</div>
+          <div id="ar-user-name" style="font-size:13px;color:var(--ink3);margin:4px 0 14px"></div>
+          <div class="field">
+            <label>Nueva contraseña</label>
+            <input type="password" id="ar-pass" placeholder="Mínimo 8 caracteres">
+          </div>
+          <div class="field">
+            <label>Confirmar contraseña</label>
+            <input type="password" id="ar-conf" placeholder="Repite la contraseña">
+          </div>
+          <div id="ar-err" class="alert-box" style="display:none;margin-bottom:10px">
+            <span id="ar-err-txt"></span>
+          </div>
+          <div class="btn-pair">
+            <button class="btn-sec" onclick="closeModal('m-admin-reset')">Cancelar</button>
+            <button class="btn-pri" onclick="doAdminResetPass()">Guardar</button>
+          </div>
+        </div>
+      </div>`;
+    modal.onclick=e=>{ if(e.target===modal) closeModal('m-admin-reset'); };
+    document.body.appendChild(modal);
+  }
+  document.getElementById('ar-user-name').textContent=`Usuario: ${userName}`;
+  document.getElementById('ar-pass').value='';
+  document.getElementById('ar-conf').value='';
+  document.getElementById('ar-err').style.display='none';
+  modal._userId=userId;
+  openModal('m-admin-reset');
+}
+
+async function doAdminResetPass(){
+  const modal=document.getElementById('m-admin-reset');
+  const pass=document.getElementById('ar-pass').value;
+  const conf=document.getElementById('ar-conf').value;
+  const err=m=>{ document.getElementById('ar-err').style.display='flex'; document.getElementById('ar-err-txt').textContent=m; };
+  if(!pass||!conf){ err('Completa todos los campos.'); return; }
+  if(pass.length<8){ err('Mínimo 8 caracteres.'); return; }
+  if(pass!==conf){ err('Las contraseñas no coinciden.'); return; }
+  const hash=await sha256(pass);
+  const {error}=await sb.from('usuarios').update({pass_hash:hash}).eq('id',modal._userId);
+  if(error){ err('Error al guardar.'); return; }
+  closeModal('m-admin-reset');
+  showToast('✓ Contraseña actualizada');
+}
+
+function openEditUser(userId, userName, userUser, userRol){
+  let modal=document.getElementById('m-edit-user');
+  if(!modal){
+    modal=document.createElement('div');
+    modal.id='m-edit-user';
+    modal.className='modal-ov';
+    modal.innerHTML=`
+      <div class="modal-sh" style="max-height:80%">
+        <div class="modal-handle"></div>
+        <div class="modal-body">
+          <div class="m-title">Editar usuario</div>
+          <div class="field" style="margin-top:14px">
+            <label>Nombre completo</label>
+            <input type="text" id="eu-nombre" placeholder="Nombre">
+          </div>
+          <div class="field">
+            <label>Usuario</label>
+            <input type="text" id="eu-usuario" placeholder="usuario" autocapitalize="none">
+          </div>
+          <div class="field">
+            <label>Rol</label>
+            <select id="eu-rol">
+              <option value="viewer">Solo lectura</option>
+              <option value="editor">Editor</option>
+              <option value="admin">Administrador</option>
+            </select>
+          </div>
+          <div id="eu-err" class="alert-box" style="display:none;margin-bottom:10px">
+            <span id="eu-err-txt"></span>
+          </div>
+          <div class="btn-pair">
+            <button class="btn-sec" onclick="closeModal('m-edit-user')">Cancelar</button>
+            <button class="btn-pri" onclick="doEditUser()">Guardar</button>
+          </div>
+        </div>
+      </div>`;
+    modal.onclick=e=>{ if(e.target===modal) closeModal('m-edit-user'); };
+    document.body.appendChild(modal);
+  }
+  document.getElementById('eu-nombre').value=userName;
+  document.getElementById('eu-usuario').value=userUser;
+  document.getElementById('eu-rol').value=userRol;
+  document.getElementById('eu-err').style.display='none';
+  modal._userId=userId;
+  openModal('m-edit-user');
+}
+
+async function doEditUser(){
+  const modal=document.getElementById('m-edit-user');
+  const nombre=(document.getElementById('eu-nombre').value||'').trim();
+  const usuario=(document.getElementById('eu-usuario').value||'').trim().toLowerCase();
+  const rol=document.getElementById('eu-rol').value;
+  const err=m=>{ document.getElementById('eu-err').style.display='flex'; document.getElementById('eu-err-txt').textContent=m; };
+  if(!nombre||!usuario){ err('Completa todos los campos.'); return; }
+  if(!/^[a-z0-9_]+$/.test(usuario)){ err('Usuario: solo letras, números y guion bajo.'); return; }
+  const {error}=await sb.from('usuarios').update({nombre,usuario,rol}).eq('id',modal._userId);
+  if(error){ error.code==='23505'?err('Ese usuario ya existe.'):err('Error al guardar.'); return; }
+  closeModal('m-edit-user');
+  renderUsersList();
+  showToast('✓ Usuario actualizado');
 }
 async function addUser(){
   const nombre=(document.getElementById('nu-name').value||'').trim();
