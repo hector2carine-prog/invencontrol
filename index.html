@@ -702,6 +702,7 @@ document.addEventListener("DOMContentLoaded",function(){document.querySelectorAl
         </button>
       </div>
       <button class="fab" id="fab-add-art" onclick="addArtInLugar()">+</button>
+      <button class="fab" id="fab-add-art" onclick="addArtInLugar()">+</button>
     </section>
 
     <!-- INVENTARIO COMPLETO -->
@@ -1350,8 +1351,14 @@ function renderLugarItems(){
   const q=(document.getElementById('lugar-search').value||'').toLowerCase();
   const items=inventory.filter(i=>i.lugar_id===currentLugar.id&&(!lugarCatFilter||i.categoria===lugarCatFilter)&&(!lugarEstFilter||i.estado===lugarEstFilter)&&(!lugarUbicFilter||i.ubicacion===lugarUbicFilter)&&(!q||(i.nombre||'').toLowerCase().includes(q)||(i.codigo||'').toLowerCase().includes(q)));
   const body=document.getElementById('lugar-items-list');
-  if(!items.length){ body.innerHTML=`<div class="empty-state"><i class="ti ti-box"></i><p>${inventory.filter(i=>i.lugar_id===currentLugar.id).length?'Sin resultados.':'Este lugar está vacío.<br>Toca + para agregar artículos.'}</p></div>`; return; }
-  body.innerHTML=items.map(i=>itemCardHTML(i,false)).join('');
+  if(!items.length){
+    body.innerHTML=`<div class="empty-state"><p>${inventory.filter(i=>i.lugar_id===currentLugar.id).length?'Sin resultados.':'Este lugar está vacío.'}</p></div>`;
+  } else {
+    body.innerHTML=items.map(i=>itemCardHTML(i,false)).join('');
+  }
+  // Siempre mostrar botón agregar para admin/editor
+  const inlineBtn=document.getElementById('btn-add-art-inline');
+  if(inlineBtn) inlineBtn.style.display=currentUser&&currentUser.rol!=='viewer'?'block':'none';
 }
 
 function addArtInLugar(){ goScreen('add'); setTimeout(()=>{ if(currentLugar) document.getElementById('a-lugar').value=currentLugar.id; },150); }
