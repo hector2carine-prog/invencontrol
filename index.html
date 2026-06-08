@@ -696,6 +696,11 @@ document.addEventListener("DOMContentLoaded",function(){document.querySelectorAl
         <button class="chip sm" onclick="setLugarEstFilter('Dado de baja',this)">Baja</button>
       </div>
       <div id="lugar-items-list"></div>
+      <div id="btn-add-art-inline" style="display:none;padding:8px 0 16px">
+        <button onclick="addArtInLugar()" style="width:100%;padding:13px;background:var(--blue);color:#fff;border:none;border-radius:10px;font-size:15px;font-weight:600;font-family:'Inter',sans-serif;cursor:pointer">
+          + Agregar artículo
+        </button>
+      </div>
       <button class="fab" id="fab-add-art" onclick="addArtInLugar()">+</button>
     </section>
 
@@ -1329,6 +1334,8 @@ function openLugar(id){
       fab.setAttribute('style','display:none!important');
     }
   }
+  const inlineBtn = document.getElementById('btn-add-art-inline');
+  if(inlineBtn) inlineBtn.style.display = currentUser.rol!=='viewer' ? 'block' : 'none';
   screenHistory.push('lugar-detail'); closeUM();
   document.getElementById('lugar-search').value='';
   renderLugarItems();
