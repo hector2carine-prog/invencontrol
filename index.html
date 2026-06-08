@@ -1542,7 +1542,7 @@ async function deleteItem(){ if(currentUser.rol==='viewer'){ showToast('Sin perm
 const ICONOS=['ti-building-warehouse','ti-building','ti-truck','ti-tool','ti-archive','ti-box','ti-car','ti-device-laptop','ti-shirt','ti-packages','ti-map-pin','ti-home'];
 const COLORES=['#111111','#CC2229','#185FA5','#1A8A5A','#C07A10','#7B5EA7','#D85A30','#444444'];
 
-function showLugaresAdmin(){ closeUM(); goScreen('lugares-admin'); }
+function showLugaresAdmin(){ if(currentUser.rol!=='admin'){ showToast('Sin permisos.'); return; } closeUM(); goScreen('lugares-admin'); }
 function openAddLugar(){ showLugaresAdmin(); }
 function renderIconPicker(){ document.getElementById('icon-picker').innerHTML=ICONOS.map(ic=>`<button class="ip-btn${ic===document.getElementById('nl-icono').value?' active':''}" onclick="selectIcono('${ic}')"><i class="ti ${ic}" aria-hidden="true"></i></button>`).join(''); }
 function selectIcono(ic){ document.getElementById('nl-icono').value=ic; document.querySelectorAll('.ip-btn').forEach(b=>b.classList.toggle('active',b.querySelector('i').className.includes(ic))); }
@@ -1697,7 +1697,7 @@ async function doChgPass(){
 }
 
 // ── USUARIOS ──────────────────────────────────────
-function showUsersPanel(){ closeUM(); renderUsersList(); goScreen('users'); }
+function showUsersPanel(){ if(currentUser.rol!=='admin'){ showToast('Sin permisos.'); return; } closeUM(); renderUsersList(); goScreen('users'); }
 async function renderUsersList(){
   const {data}=await sb.from('usuarios').select('*').order('creado_at');
   const rows=(data||[]).map(u=>{
