@@ -591,11 +591,7 @@ window._LOGO_SRC = "data:image/jpeg;base64," +
 "FYpGpJOYhskmjga7UbvpsZmf3Psb6CZMkEEGXPJIumZ0HJqKRvM/Ze9JvqJRn9/o0Le5qqa7mZcQhrv7M1IFRzSMyxmdSRvrnsXcaO7pJOYiWhN0vXMscs+apmnkbEZmhccqO/r9nm2dBe87mZ/TVZ1zcjrnoml7J67mge5KWMzf9iVkROf0++dUTlxLMY1mP5FbP6Tk" +
 "HknqQPMkXg857HLkQQhrTPwQvWchZr+jXGRHD8jEtMxizIHnwLuQamgrEDEZl6ZlzMuM8GZcjT+/s02Q8+Op3z5Nc/o1mOc93PTPZmXgfdQkQa3z0Sokeb6XO77E2dhKegoQ77Z7IzGRRZkmZcieQlD2zyeGZmw8DFOf1mn84NKNCCPRBA10Hmh4My5HgzLnjPYtc/ZP" +
 "TPdI1z8kEF6ZmpeJFI0QRXfP3RroRpcWmufFCH2Nc7EdM9kZjJ0XXoR9xOn05WpUqd6wwoFGX0vTp16VGrRo1afELvHJgq0voEiTYteLXjyoatP/AILRq86NChctWatWmQZcudIkyQshshUzMzs20dWVcyZm//4AAwD/2Q==";
-document.addEventListener("DOMContentLoaded",function(){
-  document.querySelectorAll("#logo-login,#logo-header").forEach(function(e){
-    e.src = window._LOGO_SRC || "";
-  });
-});
+document.addEventListener("DOMContentLoaded",function(){document.querySelectorAll("#logo-login,#logo-header").forEach(function(e){e.src=window._LOGO_SRC||"";});});
 
 </script>
 </head>
@@ -738,20 +734,19 @@ document.addEventListener("DOMContentLoaded",function(){
           </button>
         </div>
 
-        <!-- Botón principal — abre cámara nativa del iPhone -->
+        <!-- Botón principal — escáner en vivo -->
         <div class="scan-native-box" id="scan-native-box">
-          <div class="snb-icon"><i class="ti ti-camera" id="snb-ico"></i></div>
-          <div class="snb-title" id="snb-title">Escanear código QR</div>
-          <div class="snb-sub">Toca para abrir la cámara</div>
-          <label class="btn-pri snb-btn" for="scan-file-input">
-            <i class="ti ti-scan"></i> Abrir cámara
+          <div class="snb-icon">📷</div>
+          <div class="snb-title" id="snb-title">Escáner en vivo</div>
+          <div class="snb-sub">Apunta la cámara al código QR o de barras</div>
+          <button class="btn-pri snb-btn" onclick="startLiveScanner()" style="width:100%">
+            Iniciar escáner
+          </button>
+          <label class="btn-sec" for="scan-file-input" style="width:100%;margin-top:8px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:7px;padding:11px 16px;border-radius:7px;font-size:14px;font-weight:500;font-family:'Inter',sans-serif;background:var(--card);color:var(--ink2);border:1px solid var(--border)">
+            Usar foto en cambio
           </label>
           <input type="file" id="scan-file-input" accept="image/*" capture="environment"
             style="display:none" onchange="processScanImage(event)">
-          <!-- Opción: subir imagen existente -->
-          <label class="btn-sec" for="scan-gallery-input" style="width:100%;margin-top:8px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:7px;padding:11px 16px;border-radius:7px;font-size:14px;font-weight:500;font-family:'Inter',sans-serif;background:var(--card);color:var(--ink2);border:1px solid var(--border)">
-            <i class="ti ti-photo"></i> Usar imagen de galería
-          </label>
           <input type="file" id="scan-gallery-input" accept="image/*"
             style="display:none" onchange="processScanImage(event)">
         </div>
@@ -14731,7 +14726,10 @@ function procesarCodigo5(data) {
   try { const o = JSON.parse(data); codigo = o.codigo || o.serial || data; } catch {}
 
   const found = inventory.find(i =>
-    i.codigo === codigo || i.codigo === data ||
+    i.id === data ||
+    i.id === codigo ||
+    i.codigo === codigo ||
+    i.codigo === data ||
     (i.codigo && (data.includes(i.codigo) || codigo.includes(i.codigo)))
   );
 
