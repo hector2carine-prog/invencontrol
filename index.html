@@ -818,7 +818,8 @@ document.addEventListener("DOMContentLoaded",function(){document.querySelectorAl
     <section class="screen" id="s-add">
       <div class="form-card">
         <div class="fc-title"><i class="ti ti-info-circle"></i>Datos del artículo</div>
-        <div class="field"><label>Lugar *</label><select id="a-lugar"><option value="">Sin lugar asignado</option></select></div>
+        <div class="field"><label>Lugar</label><select id="a-lugar"><option value="">Sin lugar asignado</option></select></div>
+        <div class="field"><label>Ubicación dentro del lugar</label><input type="text" id="a-ubicacion" placeholder="Ej: Mueble 1, Estante A, Cajón 3..." list="ubicacion-list" autocomplete="off"><datalist id="ubicacion-list"></datalist></div>
         <div class="field"><label>Código / QR</label>
           <div class="code-field">
             <input type="text" id="a-code" placeholder="Escanear o ingresar manualmente">
@@ -1121,7 +1122,7 @@ async function sha256(t){
 }
 
 let currentUser=null, inventory=[], lugares=[], addPhotos=[];
-let catFilter='', estFilter='', lugarCatFilter='', lugarEstFilter='';
+let catFilter='', estFilter='', lugarCatFilter='', lugarEstFilter='', lugarUbicFilter='';
 let currentLugar=null, editingId=null, modalItemId=null;
 let qrModalInst=null, qrFormInst=null;
 let scanStream=null, scanActive=false, scanInterval=null, scanForFieldCb=null;
@@ -1273,7 +1274,7 @@ function renderLugares(){
 // ── INTERIOR DE UN LUGAR ──────────────────────────
 function openLugar(id){
   const lugar=lugares.find(l=>l.id===id); if(!lugar) return;
-  currentLugar=lugar; lugarCatFilter=''; lugarEstFilter='';
+  currentLugar=lugar; lugarCatFilter=''; lugarEstFilter=''; lugarUbicFilter='';
   document.getElementById('hdr-title').textContent=lugar.nombre;
   document.getElementById('hdr-sub').textContent=lugar.descripcion||'Artículos en este lugar';
   document.getElementById('hdr-back').style.display='flex';
@@ -1292,6 +1293,24 @@ function openLugar(id){
   document.getElementById('lugar-cat-chips').innerHTML=
     '<button class="chip active" onclick="setLugarCatFilter(\'\',this)">Todos</button>'+
     cats.map(c=>`<button class="chip" onclick="setLugarCatFilter('${c.replace(/'/g,"\\'")}',this)">${c}</button>`).join('');
+
+  // Chips de ubicación
+  const ubicaciones=[...new Set(arts.map(i=>i.ubicacion).filter(Boolean))];
+  let ubicChips=document.getElementById('lugar-ubicacion-chips');
+  if(!ubicChips){
+    ubicChips=document.createElement('div');
+    ubicChips.id='lugar-ubicacion-chips';
+    ubicChips.className='chips-row';
+    const catChips=document.getElementById('lugar-cat-chips');
+    catChips.parentNode.insertBefore(ubicChips, catChips.nextSibling);
+  }
+  if(ubicaciones.length){
+    ubicChips.style.display='flex';
+    ubicChips.innerHTML='<button class="chip active" onclick="setLugarUbicFilter(\'\',this)">📍 Todas</button>'+
+      ubicaciones.map(u=>`<button class="chip" onclick="setLugarUbicFilter('${u.replace(/'/g,"\\'")}',this)">📍 ${u}</button>`).join('');
+  } else {
+    ubicChips.style.display='none';
+  }
   Object.values(SCREEN_MAP).forEach(c=>document.getElementById(c.id).classList.remove('active'));
   document.getElementById('s-lugar-detail').classList.add('active');
   document.querySelectorAll('.nb').forEach(b=>b.classList.remove('active'));
@@ -1304,11 +1323,12 @@ function openLugar(id){
 
 function setLugarCatFilter(v,el){ lugarCatFilter=v; document.querySelectorAll('#lugar-cat-chips .chip').forEach(c=>c.classList.remove('active')); el.classList.add('active'); renderLugarItems(); }
 function setLugarEstFilter(v,el){ lugarEstFilter=v; document.querySelectorAll('.estado-chips .chip').forEach(c=>c.classList.remove('active')); el.classList.add('active'); renderLugarItems(); }
+function setLugarUbicFilter(v,el){ lugarUbicFilter=v; document.querySelectorAll('#lugar-ubicacion-chips .chip').forEach(c=>c.classList.remove('active')); el.classList.add('active'); renderLugarItems(); }
 
 function renderLugarItems(){
   if(!currentLugar) return;
   const q=(document.getElementById('lugar-search').value||'').toLowerCase();
-  const items=inventory.filter(i=>i.lugar_id===currentLugar.id&&(!lugarCatFilter||i.categoria===lugarCatFilter)&&(!lugarEstFilter||i.estado===lugarEstFilter)&&(!q||(i.nombre||'').toLowerCase().includes(q)||(i.codigo||'').toLowerCase().includes(q)));
+  const items=inventory.filter(i=>i.lugar_id===currentLugar.id&&(!lugarCatFilter||i.categoria===lugarCatFilter)&&(!lugarEstFilter||i.estado===lugarEstFilter)&&(!lugarUbicFilter||i.ubicacion===lugarUbicFilter)&&(!q||(i.nombre||'').toLowerCase().includes(q)||(i.codigo||'').toLowerCase().includes(q)));
   const body=document.getElementById('lugar-items-list');
   if(!items.length){ body.innerHTML=`<div class="empty-state"><i class="ti ti-box"></i><p>${inventory.filter(i=>i.lugar_id===currentLugar.id).length?'Sin resultados.':'Este lugar está vacío.<br>Toca + para agregar artículos.'}</p></div>`; return; }
   body.innerHTML=items.map(i=>itemCardHTML(i,false)).join('');
@@ -1385,7 +1405,7 @@ function toggleFlash(){ if(!scanStream) return; const track=scanStream.getVideoT
 // ── FORMULARIO ────────────────────────────────────
 function resetForm(){
   editingId=null;
-  ['a-code','a-name','a-cat','a-obs'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  ['a-code','a-name','a-cat','a-obs','a-ubicacion'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   document.getElementById('a-qty').value='1'; document.getElementById('a-est').value='Operativo';
   document.getElementById('a-price').value=''; document.getElementById('a-date').value='';
   document.getElementById('a-lugar').value='';
@@ -1418,7 +1438,7 @@ async function saveArticulo(){
   btn.disabled=true; prog.style.display='flex'; setProgress('Guardando...');
   try {
     const lugarId=document.getElementById('a-lugar').value||null;
-    const payload={ lugar_id:lugarId, codigo:(document.getElementById('a-code').value||'').trim()||null, nombre, categoria:(document.getElementById('a-cat').value||'').trim()||null, cantidad:parseInt(document.getElementById('a-qty').value)||1, estado:document.getElementById('a-est').value||'Operativo', precio:parseFloat(document.getElementById('a-price').value)||null, fecha_adq:document.getElementById('a-date').value||null, observaciones:(document.getElementById('a-obs').value||'').trim()||null, creado_por:currentUser.nombre };
+    const payload={ lugar_id:lugarId, codigo:(document.getElementById('a-code').value||'').trim()||null, nombre, categoria:(document.getElementById('a-cat').value||'').trim()||null, ubicacion:(document.getElementById('a-ubicacion')?.value||'').trim()||null, cantidad:parseInt(document.getElementById('a-qty').value)||1, estado:document.getElementById('a-est').value||'Operativo', precio:parseFloat(document.getElementById('a-price').value)||null, fecha_adq:document.getElementById('a-date').value||null, observaciones:(document.getElementById('a-obs').value||'').trim()||null, creado_por:currentUser.nombre };
     let artId;
     if(editingId){
       const {error}=await sb.from('articulos').update(payload).eq('id',editingId); if(error) throw error; artId=editingId;
@@ -1456,7 +1476,11 @@ function openDetail(id){
   document.getElementById('m-meta').textContent=item.categoria||'Sin categoría';
   document.getElementById('m-badges').innerHTML=estadoBadge(item.estado)+`<span class="ebadge" style="background:var(--bg2);color:var(--ink2)">${item.cantidad} unidad${item.cantidad!==1?'es':''}</span>`+(item.precio?`<span class="ebadge" style="background:var(--bg2);color:var(--ink2)">$${Number(item.precio).toLocaleString('es-CL')}</span>`:'');
   document.getElementById('m-obs').textContent=item.observaciones||'';
-  let extra=''; if(item.fecha_adq) extra+=`<div class="m-extra-row"><i class="ti ti-calendar-plus"></i>Adquirido: <strong>${fmtDate(item.fecha_adq)}</strong></div>`; if(item.creado_por) extra+=`<div class="m-extra-row"><i class="ti ti-user"></i>Registrado por: <strong>${item.creado_por}</strong></div>`; document.getElementById('m-extra').innerHTML=extra;
+  let extra='';
+  if(item.ubicacion) extra+=`<div class="m-extra-row">📍 Ubicación: <strong>${item.ubicacion}</strong></div>`;
+  if(item.fecha_adq) extra+=`<div class="m-extra-row"><i class="ti ti-calendar-plus"></i>Adquirido: <strong>${fmtDate(item.fecha_adq)}</strong></div>`;
+  if(item.creado_por) extra+=`<div class="m-extra-row"><i class="ti ti-user"></i>Registrado por: <strong>${item.creado_por}</strong></div>`;
+  document.getElementById('m-extra').innerHTML=extra;
   document.getElementById('m-photos').innerHTML=item.fotos&&item.fotos.length>1?`<div class="m-section-title">Fotos (${item.fotos.length})</div><div class="modal-photos">${item.fotos.map(f=>`<img src="${f}" alt="foto">`).join('')}</div>`:'';
   const qrEl=document.getElementById('m-qr'); qrEl.innerHTML='';
   qrModalInst=new QRCode(qrEl,{text:item.codigo||item.id,width:160,height:160,
@@ -1495,7 +1519,22 @@ function printModalQR(){
   win.document.close();
 }
 function editCurrent(){ if(currentUser.rol==='viewer'){ showToast('Sin permisos.'); return; } const item=inventory.find(i=>i.id===modalItemId); if(!item) return; closeModal('m-detail'); editingId=modalItemId; goScreen('add'); setTimeout(()=>populateForm(item),200); }
-function populateForm(item){ document.getElementById('a-code').value=item.codigo||''; document.getElementById('a-name').value=item.nombre||''; document.getElementById('a-cat').value=item.categoria||''; document.getElementById('a-qty').value=item.cantidad||1; document.getElementById('a-est').value=item.estado||'Operativo'; document.getElementById('a-price').value=item.precio||''; document.getElementById('a-date').value=item.fecha_adq||''; document.getElementById('a-obs').value=item.observaciones||''; document.getElementById('a-lugar').value=item.lugar_id||''; document.getElementById('hdr-title').textContent='Editar artículo'; document.getElementById('save-label').textContent='Guardar cambios'; if(item.codigo) generateQRPreview(item.codigo); addPhotos=[]; renderPhotosGrid(); }
+function populateForm(item){
+  document.getElementById('a-code').value=item.codigo||'';
+  document.getElementById('a-name').value=item.nombre||'';
+  document.getElementById('a-cat').value=item.categoria||'';
+  document.getElementById('a-ubicacion') && (document.getElementById('a-ubicacion').value=item.ubicacion||'');
+  document.getElementById('a-qty').value=item.cantidad||1;
+  document.getElementById('a-est').value=item.estado||'Operativo';
+  document.getElementById('a-price').value=item.precio||'';
+  document.getElementById('a-date').value=item.fecha_adq||'';
+  document.getElementById('a-obs').value=item.observaciones||'';
+  document.getElementById('a-lugar').value=item.lugar_id||'';
+  document.getElementById('hdr-title').textContent='Editar artículo';
+  document.getElementById('save-label').textContent='Guardar cambios';
+  if(item.codigo) generateQRPreview(item.codigo);
+  addPhotos=[]; renderPhotosGrid();
+}
 async function editEstado(){ if(currentUser.rol==='viewer'){ showToast('Sin permisos.'); return; } const item=inventory.find(i=>i.id===modalItemId); if(!item) return; const estados=['Operativo','Mantención','Revisión','Dado de baja']; const v=prompt(`Estado de "${item.nombre}":\n1. Operativo\n2. Mantención\n3. Revisión\n4. Dado de baja\n\nActual: ${item.estado}\nIngresa número (1-4):`,estados.indexOf(item.estado)+1); if(!v) return; const n=parseInt(v)-1; if(n<0||n>3){ showToast('Opción inválida'); return; } const {error}=await sb.from('articulos').update({estado:estados[n]}).eq('id',item.id); if(error){ showToast('Error.'); return; } item.estado=estados[n]; closeModal('m-detail'); renderLugarItems(); renderInventario(); renderLugares(); showToast('Estado actualizado'); }
 async function deleteItem(){ if(currentUser.rol==='viewer'){ showToast('Sin permisos.'); return; } const item=inventory.find(i=>i.id===modalItemId); if(!item) return; if(!confirm(`¿Eliminar "${item.nombre}"?`)) return; for(const url of(item.fotos||[])){ const path=url.split(`/${STORAGE_BUCKET}/`)[1]; if(path) await sb.storage.from(STORAGE_BUCKET).remove([path]); } const {error}=await sb.from('articulos').delete().eq('id',item.id); if(error){ showToast('Error.'); return; } inventory=inventory.filter(i=>i.id!==modalItemId); closeModal('m-detail'); updateCount(); renderLugarItems(); renderInventario(); renderLugares(); showToast('Artículo eliminado'); }
 
