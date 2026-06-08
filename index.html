@@ -14711,6 +14711,7 @@ window.processScanImage = function(event) {
 
 function procesarCodigo5(data) {
   if (navigator.vibrate) navigator.vibrate(100);
+  console.log('QR escaneado:', data);
 
   if (scanForFieldCb) {
     let codigo = data;
@@ -14722,25 +14723,28 @@ function procesarCodigo5(data) {
     return;
   }
 
-  let codigo = data;
+  let codigo = data.trim();
   try { const o = JSON.parse(data); codigo = o.codigo || o.serial || data; } catch {}
 
+  // Buscar por ID exacto, código exacto, o coincidencia parcial
   const found = inventory.find(i =>
-    i.id === data ||
+    i.id === data.trim() ||
     i.id === codigo ||
     i.codigo === codigo ||
-    i.codigo === data ||
-    (i.codigo && (data.includes(i.codigo) || codigo.includes(i.codigo)))
+    i.codigo === data.trim() ||
+    (i.codigo && i.codigo.trim() === codigo.trim())
   );
 
+  console.log('Artículo encontrado:', found ? found.nombre : 'NO');
+  console.log('Inventario IDs:', inventory.map(i => i.id.substring(0,8)).join(', '));
+
   if (found) {
-    // Ir directo al artículo
     stopLiveScanner();
     setTimeout(() => openDetail(found.id), 200);
   } else {
     const box = document.getElementById('scan-native-box');
     if(box) box.style.display = 'none';
-    document.getElementById('snf-code').textContent        = codigo;
+    document.getElementById('snf-code').textContent = codigo.substring(0,50);
     document.getElementById('scan-notfound').style.display = 'block';
     document.getElementById('scan-found').style.display    = 'none';
   }
