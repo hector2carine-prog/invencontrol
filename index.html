@@ -47,7 +47,7 @@
   --shadow-md:0 4px 20px rgba(0,0,0,.10);
 }
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
-html,body{height:100%;font-family:'Inter',sans-serif;background:var(--bg);color:var(--ink);font-size:14px;overflow:hidden}
+html,body{height:100%;font-family:'Inter',sans-serif;background:var(--bg);color:var(--ink);font-size:14px;overflow:hidden;-webkit-overflow-scrolling:touch}
 
 /* ── SPLASH ── */
 .splash{position:fixed;inset:0;background:var(--blue);display:flex;align-items:center;justify-content:center;z-index:9999}
@@ -697,7 +697,7 @@ document.addEventListener("DOMContentLoaded",function(){document.querySelectorAl
         <button class="chip sm" onclick="setLugarEstFilter('Dado de baja',this)">Baja</button>
       </div>
       <div id="lugar-items-list"></div>
-      <button class="fab editor-fab" id="fab-add-art" onclick="addArtInLugar()" style="display:none"><i class="ti ti-plus"></i></button>
+      <button class="fab" id="fab-add-art" onclick="addArtInLugar()" style="display:none">+</button>
     </section>
 
     <!-- INVENTARIO COMPLETO -->
