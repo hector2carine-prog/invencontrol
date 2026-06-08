@@ -14733,17 +14733,13 @@ function procesarCodigo5(data) {
     (i.codigo && (data.includes(i.codigo) || codigo.includes(i.codigo)))
   );
 
-  const box = document.getElementById('scan-native-box');
-  if(box) box.style.display = 'none';
-
   if (found) {
-    scanFoundId5 = found.id;
-    document.getElementById('sf-nombre').textContent = found.nombre;
-    document.getElementById('sf-meta').textContent   =
-      [found.lugar_nombre, found.categoria, found.estado].filter(Boolean).join(' · ');
-    document.getElementById('scan-found').style.display    = 'flex';
-    document.getElementById('scan-notfound').style.display = 'none';
+    // Ir directo al artículo
+    stopLiveScanner();
+    setTimeout(() => openDetail(found.id), 200);
   } else {
+    const box = document.getElementById('scan-native-box');
+    if(box) box.style.display = 'none';
     document.getElementById('snf-code').textContent        = codigo;
     document.getElementById('scan-notfound').style.display = 'block';
     document.getElementById('scan-found').style.display    = 'none';
