@@ -384,7 +384,7 @@ html,body{height:100%;font-family:'Inter',sans-serif;background:var(--bg);color:
 .btn-del-lugar:hover{color:var(--red)}
 
 /* ── FAB ── */
-.fab{position:fixed;bottom:calc(var(--botnav)+14px);right:16px;width:50px;height:50px;border-radius:50%;background:var(--blue);color:#fff;border:none;font-size:22px;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 14px rgba(27,79,216,.4);transition:transform .15s;z-index:90}
+.fab{position:fixed;bottom:calc(var(--botnav)+14px);right:16px;width:56px;height:56px;border-radius:50%;background:var(--blue);color:#fff;border:none;font-size:26px;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 14px rgba(27,58,92,.4);transition:transform .15s;z-index:200}
 .fab:active{transform:scale(.93)}
 .editor-fab{display:none}
 
@@ -1315,7 +1315,8 @@ function openLugar(id){
   document.getElementById('s-lugar-detail').classList.add('active');
   document.querySelectorAll('.nb').forEach(b=>b.classList.remove('active'));
   document.getElementById('nb-lugares').classList.add('active');
-  document.getElementById('fab-add-art').style.display=currentUser.rol!=='viewer'?'flex':'none';
+  document.getElementById('fab-add-art').style.cssText='display:flex!important';
+  document.getElementById('fab-add-art').style.display='flex';
   screenHistory.push('lugar-detail'); closeUM();
   document.getElementById('lugar-search').value='';
   renderLugarItems();
