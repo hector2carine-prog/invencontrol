@@ -1195,7 +1195,6 @@ async function launchApp(){
     document.getElementById('um-lugares-btn').style.display='flex';
     document.getElementById('btn-add-lugar').style.display='flex';
   }
-  if(currentUser.rol!=='viewer') document.getElementById('fab-add-art').style.display='none'; // se muestra solo en lugar-detail
   document.getElementById('app').style.display='block';
   await Promise.all([loadLugares(), loadInventory()]);
   updateCount(); fillDataLists(); goScreen('lugares');
@@ -1243,14 +1242,7 @@ function goScreen(s){
   document.getElementById('hdr-back').style.display=isRoot?'none':'flex';
   document.querySelectorAll('.nb').forEach(b=>b.classList.remove('active'));
   if(cfg.nav) document.getElementById(cfg.nav).classList.add('active');
-  const fab = document.getElementById('fab-add-art');
-  if(fab){
-    if(s==='lugar-detail' && currentUser && currentUser.rol!=='viewer'){
-      fab.setAttribute('style','display:flex!important;visibility:visible!important;opacity:1!important');
-    } else {
-      fab.setAttribute('style','display:none!important');
-    }
-  }
+
   if(s==='lugares')        renderLugares();
   if(s==='inventory')      renderInventario();
   if(s==='scan')           startScan();
@@ -1326,14 +1318,6 @@ function openLugar(id){
   document.getElementById('s-lugar-detail').classList.add('active');
   document.querySelectorAll('.nb').forEach(b=>b.classList.remove('active'));
   document.getElementById('nb-lugares').classList.add('active');
-  const fab = document.getElementById('fab-add-art');
-  if(fab){
-    if(currentUser.rol!=='viewer'){
-      fab.setAttribute('style','display:flex!important;visibility:visible!important;opacity:1!important');
-    } else {
-      fab.setAttribute('style','display:none!important');
-    }
-  }
   const inlineBtn = document.getElementById('btn-add-art-inline');
   if(inlineBtn) inlineBtn.style.display = currentUser.rol!=='viewer' ? 'block' : 'none';
   screenHistory.push('lugar-detail'); closeUM();
