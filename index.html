@@ -1487,7 +1487,7 @@ async function saveArticulo(){
   btn.disabled=true; prog.style.display='flex'; setProgress('Guardando...');
   try {
     const lugarId=document.getElementById('a-lugar').value||null;
-    const payload={ lugar_id:lugarId, codigo:(document.getElementById('a-code').value||'').trim()||null, nombre, categoria:(document.getElementById('a-cat').value||'').trim()||null, ubicacion:(document.getElementById('a-ubicacion')?.value||'').trim()||null, cantidad:parseInt(document.getElementById('a-qty').value)||1, estado:document.getElementById('a-est').value||'Operativo', precio:parseFloat(document.getElementById('a-price').value)||null, fecha_adq:document.getElementById('a-date').value||null, observaciones:(document.getElementById('a-obs').value||'').trim()||null, creado_por:currentUser.nombre };
+    const payload={ lugar_id:lugarId, codigo:(document.getElementById('a-code').value||'').trim()||null, nombre, categoria:(document.getElementById('a-cat').value||'').trim()||null, ubicacion:(document.getElementById('a-ubicacion')?.value||'').trim()||null, valor_venta:parseFloat(document.getElementById('a-valor-venta')?.value)||null, cantidad:parseInt(document.getElementById('a-qty').value)||1, estado:document.getElementById('a-est').value||'Operativo', precio:parseFloat(document.getElementById('a-price').value)||null, fecha_adq:document.getElementById('a-date').value||null, observaciones:(document.getElementById('a-obs').value||'').trim()||null, creado_por:currentUser.nombre };
     let artId;
     if(editingId){
       const {error}=await sb.from('articulos').update(payload).eq('id',editingId); if(error) throw error; artId=editingId;
@@ -1577,37 +1577,9 @@ function toggleDescuento() {
 }
 
 // Mostrar condición de salida cuando tipo es salida
-const _origOpenMovForm = window.openMovForm;
-window.openMovForm = function(tipo) {
-  _origOpenMovForm(tipo);
-  const condWrap = document.getElementById('mf-condicion-wrap');
-  const descWrap = document.getElementById('mf-monto-descuento-wrap');
-  const condSel  = document.getElementById('mf-condicion');
-  const descInp  = document.getElementById('mf-monto-descuento');
-  if(condWrap) condWrap.style.display = tipo === 'salida' ? 'block' : 'none';
-  if(descWrap) descWrap.style.display = 'none';
-  if(condSel)  condSel.value = '';
-  if(descInp)  descInp.value = '';
-};
+// openMovForm patched directly
 
-// Guardar condicion y monto en movimiento
-const _origSaveMovimiento = window.saveMovimiento;
-window.saveMovimiento = async function() {
-  // Inyectar condicion en notas si es salida
-  const tipo = document.getElementById('mf-btn-txt')?.textContent?.toLowerCase().includes('salida') ? 'salida' : 'entrada';
-  if(tipo === 'salida') {
-    const cond = document.getElementById('mf-condicion')?.value;
-    const monto = document.getElementById('mf-monto-descuento')?.value;
-    const notasEl = document.getElementById('mf-notas');
-    if(cond && notasEl) {
-      const condLabel = {venta:'Venta', regalo:'Regalo', descuento:'Venta con descuento $'+monto}[cond] || cond;
-      const existing = notasEl.value.trim();
-      notasEl.value = existing ? existing + ' | ' + condLabel : condLabel;
-    }
-  }
-  if(_origSaveMovimiento) await _origSaveMovimiento();
-  updateKPIs();
-};
+// saveMovimiento patched directly above
 
 // KPIs
 async function updateKPIs() {
@@ -1668,33 +1640,9 @@ async function updateKPIs() {
 }
 
 // Actualizar KPIs al entrar a la pantalla
-const _origGoScreen = window.goScreen;
-window.goScreen = function(s) {
-  _origGoScreen(s);
-  if(s === 'movimientos') updateKPIs();
-};
+// goScreen KPI update patched directly
 
-// Agregar valor_venta al guardar artículo
-const _origSaveArticulo = window.saveArticulo;
-window.saveArticulo = async function() {
-  // Interceptar para agregar valor_venta
-  const valorVentaEl = document.getElementById('a-valor-venta');
-  if(valorVentaEl) {
-    // El valor se guardará junto con el payload en saveArticulo
-    window._pendingValorVenta = parseFloat(valorVentaEl.value) || null;
-  }
-  if(_origSaveArticulo) await _origSaveArticulo();
-};
-
-// Poblar valor_venta en formulario de edición
-const _origPopulateForm = window.populateForm;
-if(_origPopulateForm) {
-  window.populateForm = function(item) {
-    _origPopulateForm(item);
-    const el = document.getElementById('a-valor-venta');
-    if(el) el.value = item.valor_venta || '';
-  };
-}
+// valor_venta handled directly in saveArticulo and populateForm
 
 </body></html>`);
   win.document.close();
@@ -1705,6 +1653,7 @@ function populateForm(item){
   document.getElementById('a-name').value=item.nombre||'';
   document.getElementById('a-cat').value=item.categoria||'';
   document.getElementById('a-ubicacion') && (document.getElementById('a-ubicacion').value=item.ubicacion||'');
+  document.getElementById('a-valor-venta') && (document.getElementById('a-valor-venta').value=item.valor_venta||'');
   document.getElementById('a-qty').value=item.cantidad||1;
   document.getElementById('a-est').value=item.estado||'Operativo';
   document.getElementById('a-price').value=item.precio||'';
@@ -2091,6 +2040,17 @@ async function loadMovimientos(){
 
 // ── ABRIR FORMULARIO DE MOVIMIENTO ───────────────
 function openMovForm(tipo){
+  // Mostrar/ocultar condición según tipo
+  setTimeout(function(){
+    const condWrap = document.getElementById('mf-condicion-wrap');
+    const descWrap = document.getElementById('mf-monto-descuento-wrap');
+    const condSel  = document.getElementById('mf-condicion');
+    const descInp  = document.getElementById('mf-monto-descuento');
+    if(condWrap) condWrap.style.display = tipo === 'salida' ? 'block' : 'none';
+    if(descWrap) descWrap.style.display = 'none';
+    if(condSel)  condSel.value = '';
+    if(descInp)  descInp.value = '';
+  }, 50);
   const item = inventory.find(i=>i.id===modalItemId);
   if(!item){ showToast('Artículo no encontrado.'); return; }
   if(currentUser.rol==='viewer'){ showToast('Sin permisos para registrar movimientos.'); return; }
@@ -2623,6 +2583,17 @@ async function loadMovimientos(){
 }
 
 function openMovForm(tipo){
+  // Mostrar/ocultar condición según tipo
+  setTimeout(function(){
+    const condWrap = document.getElementById('mf-condicion-wrap');
+    const descWrap = document.getElementById('mf-monto-descuento-wrap');
+    const condSel  = document.getElementById('mf-condicion');
+    const descInp  = document.getElementById('mf-monto-descuento');
+    if(condWrap) condWrap.style.display = tipo === 'salida' ? 'block' : 'none';
+    if(descWrap) descWrap.style.display = 'none';
+    if(condSel)  condSel.value = '';
+    if(descInp)  descInp.value = '';
+  }, 50);
   const item=inventory.find(i=>i.id===modalItemId); if(!item) return;
   if(currentUser.rol==='viewer'){showToast('Sin permisos.');return;}
   currentMovTipo=tipo;
@@ -3024,37 +2995,9 @@ function toggleDescuento() {
 }
 
 // Mostrar condición de salida cuando tipo es salida
-const _origOpenMovForm = window.openMovForm;
-window.openMovForm = function(tipo) {
-  _origOpenMovForm(tipo);
-  const condWrap = document.getElementById('mf-condicion-wrap');
-  const descWrap = document.getElementById('mf-monto-descuento-wrap');
-  const condSel  = document.getElementById('mf-condicion');
-  const descInp  = document.getElementById('mf-monto-descuento');
-  if(condWrap) condWrap.style.display = tipo === 'salida' ? 'block' : 'none';
-  if(descWrap) descWrap.style.display = 'none';
-  if(condSel)  condSel.value = '';
-  if(descInp)  descInp.value = '';
-};
+// openMovForm patched directly
 
-// Guardar condicion y monto en movimiento
-const _origSaveMovimiento = window.saveMovimiento;
-window.saveMovimiento = async function() {
-  // Inyectar condicion en notas si es salida
-  const tipo = document.getElementById('mf-btn-txt')?.textContent?.toLowerCase().includes('salida') ? 'salida' : 'entrada';
-  if(tipo === 'salida') {
-    const cond = document.getElementById('mf-condicion')?.value;
-    const monto = document.getElementById('mf-monto-descuento')?.value;
-    const notasEl = document.getElementById('mf-notas');
-    if(cond && notasEl) {
-      const condLabel = {venta:'Venta', regalo:'Regalo', descuento:'Venta con descuento $'+monto}[cond] || cond;
-      const existing = notasEl.value.trim();
-      notasEl.value = existing ? existing + ' | ' + condLabel : condLabel;
-    }
-  }
-  if(_origSaveMovimiento) await _origSaveMovimiento();
-  updateKPIs();
-};
+// saveMovimiento patched directly above
 
 // KPIs
 async function updateKPIs() {
@@ -3115,33 +3058,9 @@ async function updateKPIs() {
 }
 
 // Actualizar KPIs al entrar a la pantalla
-const _origGoScreen = window.goScreen;
-window.goScreen = function(s) {
-  _origGoScreen(s);
-  if(s === 'movimientos') updateKPIs();
-};
+// goScreen KPI update patched directly
 
-// Agregar valor_venta al guardar artículo
-const _origSaveArticulo = window.saveArticulo;
-window.saveArticulo = async function() {
-  // Interceptar para agregar valor_venta
-  const valorVentaEl = document.getElementById('a-valor-venta');
-  if(valorVentaEl) {
-    // El valor se guardará junto con el payload en saveArticulo
-    window._pendingValorVenta = parseFloat(valorVentaEl.value) || null;
-  }
-  if(_origSaveArticulo) await _origSaveArticulo();
-};
-
-// Poblar valor_venta en formulario de edición
-const _origPopulateForm = window.populateForm;
-if(_origPopulateForm) {
-  window.populateForm = function(item) {
-    _origPopulateForm(item);
-    const el = document.getElementById('a-valor-venta');
-    if(el) el.value = item.valor_venta || '';
-  };
-}
+// valor_venta handled directly in saveArticulo and populateForm
 
 </body>
 </html>
