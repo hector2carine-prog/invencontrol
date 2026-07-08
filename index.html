@@ -837,6 +837,10 @@ document.addEventListener("DOMContentLoaded",function(){document.querySelectorAl
           <div class="field"><label>Cantidad</label><input type="number" id="a-qty" min="0" value="1"></div>
         </div>
         <div class="field-row">
+          <div class="field"><label>Valor de venta</label><input type="number" id="a-valor-venta" min="0" placeholder="0"></div>
+          <div class="field"><label>Precio costo</label><input type="number" id="a-price" min="0" placeholder="0"></div>
+        </div>
+        <div class="field-row">
           <div class="field"><label>Estado</label><select id="a-est"><option>Operativo</option><option>Mantención</option><option>Revisión</option><option>Dado de baja</option></select></div>
           <div class="field"><label>Precio / Valor</label><input type="number" id="a-price" min="0" placeholder="0"></div>
         </div>
@@ -864,6 +868,28 @@ document.addEventListener("DOMContentLoaded",function(){document.querySelectorAl
 
     <!-- MOVIMIENTOS -->
     <section class="screen" id="s-movimientos">
+      <!-- KPIs Panel -->
+      <div id="kpis-panel" style="padding:0 0 8px">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:12px 0 4px">
+          <div style="background:#fff;border-radius:12px;padding:14px;border:1px solid var(--border)">
+            <div style="font-size:11px;color:var(--ink3);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Artículos disponibles</div>
+            <div id="kpi-disponibles" style="font-size:28px;font-weight:700;color:var(--blue)">0</div>
+          </div>
+          <div style="background:#fff;border-radius:12px;padding:14px;border:1px solid var(--border)">
+            <div style="font-size:11px;color:var(--ink3);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Total ventas</div>
+            <div id="kpi-ventas" style="font-size:22px;font-weight:700;color:#16a34a">$0</div>
+          </div>
+        </div>
+        <div id="kpi-stock-bajo" style="display:none;background:#FEF3C7;border:1px solid #F59E0B;border-radius:10px;padding:10px 12px;margin-bottom:8px">
+          <div style="font-weight:600;color:#92400E;font-size:13px">⚠️ Stock bajo en:</div>
+          <div id="kpi-stock-bajo-list" style="font-size:12px;color:#92400E;margin-top:4px"></div>
+        </div>
+      </div>
+      <!-- Movimientos -->
+      <div class="mov-summary">
+        <div class="ms-card"><div class="ms-val" id="ms-entradas">0</div><div class="ms-lbl">Entradas</div></div>
+        <div class="ms-card"><div class="ms-val" id="ms-salidas">0</div><div class="ms-lbl">Salidas</div></div>
+      </div>
       <div class="mov-summary">
         <div class="ms-card"><i class="ti ti-arrow-bar-to-down ms-icon" style="color:#1A8A5A"></i><div class="ms-val" id="ms-entradas">0</div><div class="ms-lbl">Entradas</div></div>
         <div class="ms-card"><i class="ti ti-arrow-bar-up ms-icon" style="color:#C0281A"></i><div class="ms-val" id="ms-salidas">0</div><div class="ms-lbl">Salidas</div></div>
@@ -942,7 +968,7 @@ document.addEventListener("DOMContentLoaded",function(){document.querySelectorAl
     <button class="nb active" id="nb-lugares"     onclick="goScreen('lugares')">    <i class="ti ti-map-pin"></i><span>Lugares</span></button>
     <button class="nb"        id="nb-inventory"   onclick="goScreen('inventory')">  <i class="ti ti-list-details"></i><span>Todo</span></button>
     <button class="nb scan-nb"                    onclick="goScreen('scan')">        <i class="ti ti-scan"></i><span>Escanear</span></button>
-    <button class="nb"        id="nb-movimientos" onclick="goScreen('movimientos')"> <i class="ti ti-arrow-left-right"></i><span>Movimientos</span></button>
+    <button class="nb"        id="nb-movimientos" onclick="goScreen('movimientos')"> <i class="ti ti-arrow-left-right"></i><span>KPIs</span></button>
     <button class="nb"        id="nb-stats"       onclick="goScreen('stats')">       <i class="ti ti-chart-bar"></i><span>Resumen</span></button>
   </nav>
 </div>
@@ -993,6 +1019,19 @@ document.addEventListener("DOMContentLoaded",function(){document.querySelectorAl
       </div>
       <div class="mov-stock-info"><span style="font-size:13px;color:var(--ink3)">Stock actual</span><span class="mov-stock-val" id="mf-stock-actual">0</span></div>
       <div class="field"><label>Cantidad *</label><input type="number" id="mf-cantidad" min="1" value="1"></div>
+      <div class="field" id="mf-condicion-wrap" style="display:none">
+        <label>Condición de salida</label>
+        <select id="mf-condicion" onchange="toggleDescuento()">
+          <option value="">Seleccionar...</option>
+          <option value="venta">Venta (precio normal)</option>
+          <option value="regalo">Regalo</option>
+          <option value="descuento">Venta con descuento</option>
+        </select>
+      </div>
+      <div class="field" id="mf-monto-descuento-wrap" style="display:none">
+        <label>Monto de venta con descuento</label>
+        <input type="number" id="mf-monto-descuento" min="0" placeholder="Monto real de venta ($)">
+      </div>
       <div class="field"><label>Motivo</label>
         <select id="mf-motivo">
           <option value="">Seleccionar...</option>
@@ -1525,7 +1564,139 @@ function printModalQR(){
     <h3>${nombre}</h3>
     <p>${codigo}</p>
     <br><button onclick="window.print()">Imprimir</button>
-    </body></html>`);
+    
+// ═══════════════════════════════════════════════
+// NUEVAS FUNCIONALIDADES
+// ═══════════════════════════════════════════════
+
+// Toggle condición descuento en modal movimiento
+function toggleDescuento() {
+  const cond = document.getElementById('mf-condicion').value;
+  const wrap = document.getElementById('mf-monto-descuento-wrap');
+  if(wrap) wrap.style.display = cond === 'descuento' ? 'block' : 'none';
+}
+
+// Mostrar condición de salida cuando tipo es salida
+const _origOpenMovForm = window.openMovForm;
+window.openMovForm = function(tipo) {
+  _origOpenMovForm(tipo);
+  const condWrap = document.getElementById('mf-condicion-wrap');
+  const descWrap = document.getElementById('mf-monto-descuento-wrap');
+  const condSel  = document.getElementById('mf-condicion');
+  const descInp  = document.getElementById('mf-monto-descuento');
+  if(condWrap) condWrap.style.display = tipo === 'salida' ? 'block' : 'none';
+  if(descWrap) descWrap.style.display = 'none';
+  if(condSel)  condSel.value = '';
+  if(descInp)  descInp.value = '';
+};
+
+// Guardar condicion y monto en movimiento
+const _origSaveMovimiento = window.saveMovimiento;
+window.saveMovimiento = async function() {
+  // Inyectar condicion en notas si es salida
+  const tipo = document.getElementById('mf-btn-txt')?.textContent?.toLowerCase().includes('salida') ? 'salida' : 'entrada';
+  if(tipo === 'salida') {
+    const cond = document.getElementById('mf-condicion')?.value;
+    const monto = document.getElementById('mf-monto-descuento')?.value;
+    const notasEl = document.getElementById('mf-notas');
+    if(cond && notasEl) {
+      const condLabel = {venta:'Venta', regalo:'Regalo', descuento:'Venta con descuento $'+monto}[cond] || cond;
+      const existing = notasEl.value.trim();
+      notasEl.value = existing ? existing + ' | ' + condLabel : condLabel;
+    }
+  }
+  if(_origSaveMovimiento) await _origSaveMovimiento();
+  updateKPIs();
+};
+
+// KPIs
+async function updateKPIs() {
+  try {
+    // Artículos disponibles (suma de cantidades)
+    const totalDisp = inventory.reduce((s,i) => s + (i.cantidad||0), 0);
+    const el = document.getElementById('kpi-disponibles');
+    if(el) el.textContent = totalDisp;
+
+    // Suma de ventas desde movimientos
+    const {data: movs} = await sb.from('movimientos')
+      .select('notas, cantidad, articulo_id')
+      .eq('tipo', 'salida');
+    
+    let totalVentas = 0;
+    if(movs) {
+      movs.forEach(m => {
+        // Buscar artículo para obtener valor_venta
+        const art = inventory.find(i => i.id === m.articulo_id);
+        const notas = (m.notas || '').toLowerCase();
+        if(notas.includes('venta')) {
+          // Si tiene descuento extraer monto
+          const descMatch = (m.notas||'').match(/descuento \$(\d+)/i);
+          if(descMatch) {
+            totalVentas += parseFloat(descMatch[1]) * (m.cantidad||1);
+          } else if(art && art.valor_venta) {
+            totalVentas += art.valor_venta * (m.cantidad||1);
+          }
+        }
+      });
+    }
+    
+    const ventasEl = document.getElementById('kpi-ventas');
+    if(ventasEl) ventasEl.textContent = '$' + totalVentas.toLocaleString('es-CL');
+
+    // Stock bajo (30% del stock inicial o menos de 30% del máximo)
+    const stockBajo = inventory.filter(i => {
+      if(!i.cantidad) return false;
+      // Alerta si quedan 30% o menos (mínimo 1)
+      return i.cantidad <= Math.max(1, Math.round((i.cantidad_inicial || i.cantidad) * 0.3));
+    });
+    
+    const bajoPan = document.getElementById('kpi-stock-bajo');
+    const bajoList = document.getElementById('kpi-stock-bajo-list');
+    if(bajoPan && bajoList) {
+      if(stockBajo.length) {
+        bajoPan.style.display = 'block';
+        bajoList.innerHTML = stockBajo.map(i => 
+          `• ${i.nombre} — ${i.cantidad} ud${i.lugar_nombre ? ' ('+i.lugar_nombre+')' : ''}`
+        ).join('<br>');
+      } else {
+        bajoPan.style.display = 'none';
+      }
+    }
+  } catch(e) {
+    console.error('KPI error:', e);
+  }
+}
+
+// Actualizar KPIs al entrar a la pantalla
+const _origGoScreen = window.goScreen;
+window.goScreen = function(s) {
+  _origGoScreen(s);
+  if(s === 'movimientos') updateKPIs();
+};
+
+// Agregar valor_venta al guardar artículo
+const _origSaveArticulo = window.saveArticulo;
+window.saveArticulo = async function() {
+  // Interceptar para agregar valor_venta
+  const valorVentaEl = document.getElementById('a-valor-venta');
+  if(valorVentaEl) {
+    // El valor se guardará junto con el payload en saveArticulo
+    window._pendingValorVenta = parseFloat(valorVentaEl.value) || null;
+  }
+  if(_origSaveArticulo) await _origSaveArticulo();
+};
+
+// Poblar valor_venta en formulario de edición
+const _origPopulateForm = window.populateForm;
+if(_origPopulateForm) {
+  window.populateForm = function(item) {
+    _origPopulateForm(item);
+    const el = document.getElementById('a-valor-venta');
+    if(el) el.value = item.valor_venta || '';
+  };
+}
+
+</body></html>`);
   win.document.close();
 }
 function editCurrent(){ if(currentUser.rol==='viewer'){ showToast('Sin permisos.'); return; } const item=inventory.find(i=>i.id===modalItemId); if(!item) return; closeModal('m-detail'); editingId=modalItemId; goScreen('add'); setTimeout(()=>populateForm(item),200); }
@@ -2840,5 +3011,137 @@ window.processScanImage = async function(event) {
 };
 
 </script>
+
+// ═══════════════════════════════════════════════
+// NUEVAS FUNCIONALIDADES
+// ═══════════════════════════════════════════════
+
+// Toggle condición descuento en modal movimiento
+function toggleDescuento() {
+  const cond = document.getElementById('mf-condicion').value;
+  const wrap = document.getElementById('mf-monto-descuento-wrap');
+  if(wrap) wrap.style.display = cond === 'descuento' ? 'block' : 'none';
+}
+
+// Mostrar condición de salida cuando tipo es salida
+const _origOpenMovForm = window.openMovForm;
+window.openMovForm = function(tipo) {
+  _origOpenMovForm(tipo);
+  const condWrap = document.getElementById('mf-condicion-wrap');
+  const descWrap = document.getElementById('mf-monto-descuento-wrap');
+  const condSel  = document.getElementById('mf-condicion');
+  const descInp  = document.getElementById('mf-monto-descuento');
+  if(condWrap) condWrap.style.display = tipo === 'salida' ? 'block' : 'none';
+  if(descWrap) descWrap.style.display = 'none';
+  if(condSel)  condSel.value = '';
+  if(descInp)  descInp.value = '';
+};
+
+// Guardar condicion y monto en movimiento
+const _origSaveMovimiento = window.saveMovimiento;
+window.saveMovimiento = async function() {
+  // Inyectar condicion en notas si es salida
+  const tipo = document.getElementById('mf-btn-txt')?.textContent?.toLowerCase().includes('salida') ? 'salida' : 'entrada';
+  if(tipo === 'salida') {
+    const cond = document.getElementById('mf-condicion')?.value;
+    const monto = document.getElementById('mf-monto-descuento')?.value;
+    const notasEl = document.getElementById('mf-notas');
+    if(cond && notasEl) {
+      const condLabel = {venta:'Venta', regalo:'Regalo', descuento:'Venta con descuento $'+monto}[cond] || cond;
+      const existing = notasEl.value.trim();
+      notasEl.value = existing ? existing + ' | ' + condLabel : condLabel;
+    }
+  }
+  if(_origSaveMovimiento) await _origSaveMovimiento();
+  updateKPIs();
+};
+
+// KPIs
+async function updateKPIs() {
+  try {
+    // Artículos disponibles (suma de cantidades)
+    const totalDisp = inventory.reduce((s,i) => s + (i.cantidad||0), 0);
+    const el = document.getElementById('kpi-disponibles');
+    if(el) el.textContent = totalDisp;
+
+    // Suma de ventas desde movimientos
+    const {data: movs} = await sb.from('movimientos')
+      .select('notas, cantidad, articulo_id')
+      .eq('tipo', 'salida');
+    
+    let totalVentas = 0;
+    if(movs) {
+      movs.forEach(m => {
+        // Buscar artículo para obtener valor_venta
+        const art = inventory.find(i => i.id === m.articulo_id);
+        const notas = (m.notas || '').toLowerCase();
+        if(notas.includes('venta')) {
+          // Si tiene descuento extraer monto
+          const descMatch = (m.notas||'').match(/descuento \$(\d+)/i);
+          if(descMatch) {
+            totalVentas += parseFloat(descMatch[1]) * (m.cantidad||1);
+          } else if(art && art.valor_venta) {
+            totalVentas += art.valor_venta * (m.cantidad||1);
+          }
+        }
+      });
+    }
+    
+    const ventasEl = document.getElementById('kpi-ventas');
+    if(ventasEl) ventasEl.textContent = '$' + totalVentas.toLocaleString('es-CL');
+
+    // Stock bajo (30% del stock inicial o menos de 30% del máximo)
+    const stockBajo = inventory.filter(i => {
+      if(!i.cantidad) return false;
+      // Alerta si quedan 30% o menos (mínimo 1)
+      return i.cantidad <= Math.max(1, Math.round((i.cantidad_inicial || i.cantidad) * 0.3));
+    });
+    
+    const bajoPan = document.getElementById('kpi-stock-bajo');
+    const bajoList = document.getElementById('kpi-stock-bajo-list');
+    if(bajoPan && bajoList) {
+      if(stockBajo.length) {
+        bajoPan.style.display = 'block';
+        bajoList.innerHTML = stockBajo.map(i => 
+          `• ${i.nombre} — ${i.cantidad} ud${i.lugar_nombre ? ' ('+i.lugar_nombre+')' : ''}`
+        ).join('<br>');
+      } else {
+        bajoPan.style.display = 'none';
+      }
+    }
+  } catch(e) {
+    console.error('KPI error:', e);
+  }
+}
+
+// Actualizar KPIs al entrar a la pantalla
+const _origGoScreen = window.goScreen;
+window.goScreen = function(s) {
+  _origGoScreen(s);
+  if(s === 'movimientos') updateKPIs();
+};
+
+// Agregar valor_venta al guardar artículo
+const _origSaveArticulo = window.saveArticulo;
+window.saveArticulo = async function() {
+  // Interceptar para agregar valor_venta
+  const valorVentaEl = document.getElementById('a-valor-venta');
+  if(valorVentaEl) {
+    // El valor se guardará junto con el payload en saveArticulo
+    window._pendingValorVenta = parseFloat(valorVentaEl.value) || null;
+  }
+  if(_origSaveArticulo) await _origSaveArticulo();
+};
+
+// Poblar valor_venta en formulario de edición
+const _origPopulateForm = window.populateForm;
+if(_origPopulateForm) {
+  window.populateForm = function(item) {
+    _origPopulateForm(item);
+    const el = document.getElementById('a-valor-venta');
+    if(el) el.value = item.valor_venta || '';
+  };
+}
+
 </body>
 </html>
