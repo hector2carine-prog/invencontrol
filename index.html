@@ -1636,10 +1636,6 @@ async function updateKPIs() {
 // goScreen KPI update patched directly
 
 // valor_venta handled directly in saveArticulo and populateForm
-
-</body></html>`);
-  win.document.close();
-}
 function editCurrent(){ if(currentUser.rol==='viewer'){ showToast('Sin permisos.'); return; } const item=inventory.find(i=>i.id===modalItemId); if(!item) return; closeModal('m-detail'); editingId=modalItemId; goScreen('add'); setTimeout(()=>populateForm(item),200); }
 function populateForm(item){
   document.getElementById('a-code').value=item.codigo||'';
