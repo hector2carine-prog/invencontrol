@@ -1125,6 +1125,7 @@ h++){g.push("<tr>");for(var i=0;d>i;i++)g.push('<td style="border:0;border-colla
 <script src="https://cdn.jsdelivr.net/npm/quagga@0.12.1/dist/quagga.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script>
+
 // ═══════════════════════════════════════════════════
 //  CONFIGURACIÓN — InvenControl
 //  Proyecto: InvenControl (Supabase)
@@ -1554,17 +1555,9 @@ function printModalQR(){
   const codigo=item?item.codigo||item.id:'';
   const imgData=c.toDataURL();
   const win=window.open('','_blank');
-  win.document.write(`<!DOCTYPE html><html><head><title>QR - ${nombre}</title>
-    <style>body{font-family:sans-serif;text-align:center;padding:20px}
-    img{width:200px;height:200px;display:block;margin:0 auto 10px}
-    h3{margin:0 0 4px;font-size:16px}p{margin:0;font-size:13px;color:#666}
-    @media print{button{display:none}}</style></head>
-    <body>
-    <img src="${imgData}">
-    <h3>${nombre}</h3>
-    <p>${codigo}</p>
-    <br><button onclick="window.print()">Imprimir</button>
-    
+  win.document.write(`<!DOCTYPE html><html><head><title>QR - ${nombre}</title><style>body{font-family:sans-serif;text-align:center;padding:20px}img{width:200px;height:200px;display:block;margin:0 auto 10px}h3{margin:0 0 4px;font-size:16px}p{margin:0;font-size:13px;color:#666}@media print{button{display:none}}</style></head><body><img src="${imgData}"><h3>${nombre}</h3><p>${codigo}</p><br><button onclick="window.print()">Imprimir</button></body></html>\`);
+  win.document.close();
+}
 // ═══════════════════════════════════════════════
 // NUEVAS FUNCIONALIDADES
 // ═══════════════════════════════════════════════
