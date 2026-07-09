@@ -2193,26 +2193,25 @@ function movItemHTML(m, showArt=false){
   const qty   = m.tipo==='entrada' ? '+'+m.cantidad : '-'+m.cantidad;
   const meta  = [m.responsable, m.destino, m.registrado_por ? 'Reg: '+m.registrado_por : ''].filter(Boolean).join(' · ');
   const montoStr = m.monto_venta ? '<div style="font-size:12px;color:#16a34a;font-weight:600;margin-top:2px">💰 $'+Math.round(m.monto_venta).toLocaleString('es-CL')+'</div>' : '';
-  const adminBtns = currentUser && currentUser.rol==='admin'
-    ? '<div style="display:flex;gap:4px;margin-left:auto;flex-shrink:0">' +
-      '<button onclick="editMovimiento(this)" data-id="'+m.id+'" data-tipo="'+m.tipo+'" data-cantidad="'+m.cantidad+'" data-motivo="'+(m.motivo||'')+'" data-notas="'+(m.notas||'')+'" data-responsable="'+(m.responsable||'')+'" data-monto="'+(m.monto_venta||'')+'" style="background:none;border:none;color:var(--blue);cursor:pointer;font-size:16px;padding:2px 6px">✏️</button>' +
-      '<button onclick="delMovimiento(this)" data-id="'+m.id+'" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:16px;padding:2px 6px">🗑</button>' +
-      '</div>'
-    : '';
-  return '<div class="mov-item" style="align-items:center">' +
-    '<div class="mov-icon '+m.tipo+'">'+( m.tipo==='entrada'?'↓':'↑' )+'</div>' +
-    '<div class="mov-body" style="flex:1">' +
-      '<div class="mov-top">' +
-        (showArt ? '<span class="mov-art">'+(m.art_nombre||'—')+'</span>' : '<span class="mov-art">'+(m.tipo==='entrada'?'Entrada':'Salida')+'</span>') +
-        '<span class="mov-qty '+m.tipo+'">'+qty+' uds.</span>' +
-      '</div>' +
-      '<div class="mov-meta">'+fecha+' '+hora+(meta?' · '+meta:'')+'</div>' +
-      (m.motivo?'<span class="mov-motivo">'+m.motivo+'</span>':'') +
-      (m.notas?'<div style="font-size:12px;color:var(--ink3);margin-top:3px">'+m.notas+'</div>':'') +
-      montoStr +
-    '</div>' +
-    adminBtns +
-  '</div>';
+  const editData = 'data-id="'+m.id+'" data-tipo="'+m.tipo+'" data-cantidad="'+m.cantidad+'" data-motivo="'+(m.motivo||'').replace(/"/g,"'")+'" data-notas="'+(m.notas||'').replace(/"/g,"'")+'" data-responsable="'+(m.responsable||'').replace(/"/g,"'")+'" data-monto="'+(m.monto_venta||'')+'"';
+  const adminBtns = '<div style="display:flex;gap:2px;margin-left:auto;flex-shrink:0;padding-left:8px">'
+    + '<button '+editData+' onclick="editMovimiento(this)" style="background:none;border:none;color:#2563eb;cursor:pointer;font-size:20px;line-height:1;padding:4px">✏️</button>'
+    + '<button data-id="'+m.id+'" onclick="delMovimiento(this)" style="background:none;border:none;color:#dc2626;cursor:pointer;font-size:20px;line-height:1;padding:4px">🗑</button>'
+    + '</div>';
+  return '<div class="mov-item" style="display:flex;align-items:center;gap:10px">'
+    + '<div class="mov-icon '+m.tipo+'" style="flex-shrink:0">'+(m.tipo==='entrada'?'↓':'↑')+'</div>'
+    + '<div class="mov-body" style="flex:1;min-width:0">'
+      + '<div class="mov-top">'
+        + (showArt ? '<span class="mov-art">'+(m.art_nombre||'—')+'</span>' : '<span class="mov-art">'+(m.tipo==='entrada'?'Entrada':'Salida')+'</span>')
+        + '<span class="mov-qty '+m.tipo+'">'+qty+' uds.</span>'
+      + '</div>'
+      + '<div class="mov-meta">'+fecha+' '+hora+(meta?' · '+meta:'')+'</div>'
+      + (m.motivo ? '<span class="mov-motivo">'+m.motivo+'</span>' : '')
+      + (m.notas ? '<div style="font-size:12px;color:var(--ink3);margin-top:3px">'+m.notas+'</div>' : '')
+      + montoStr
+    + '</div>'
+    + adminBtns
+  + '</div>';
 }
 
 async function delMovimiento(btn){
