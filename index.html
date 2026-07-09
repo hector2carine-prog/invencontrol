@@ -1590,48 +1590,922 @@ function toggleDescuento() {
 // KPIs
 async function updateKPIs() {
   try {
-    // Artículos NO disponibles (cantidad 0 o baja)
     const noDisp = inventory.filter(i => i.cantidad <= 0 || i.estado === 'Dado de baja').length;
     const elDisp = document.getElementById('kpi-disponibles');
     if(elDisp) elDisp.textContent = noDisp;
 
-    // Total ventas — traer todos los movimientos de salida con motivo Venta
     const {data: movs} = await sb.from('movimientos')
       .select('cantidad, articulo_id, monto_venta, motivo, notas')
       .eq('tipo', 'salida');
-
     let totalVentas = 0;
     if(movs) {
       movs.forEach(m => {
-        const motivo = (m.motivo||'').toLowerCase();
-        const notas  = (m.notas||'').toLowerCase();
-        const esVenta = motivo.includes('venta') || notas.includes('venta') || notas.includes('descuento');
+        const esVenta = (m.motivo||'').toLowerCase().includes('venta') ||
+                        (m.notas||'').toLowerCase().includes('venta') ||
+                        (m.notas||'').toLowerCase().includes('descuento');
         if(!esVenta) return;
         if(m.monto_venta && m.monto_venta > 0) {
           totalVentas += parseFloat(m.monto_venta);
         } else {
           const art = inventory.find(i => i.id === m.articulo_id);
-          if(art && art.valor_venta && art.valor_venta > 0) {
-            totalVentas += art.valor_venta * (m.cantidad || 1);
+          if(art && art.valor_venta > 0) totalVentas += art.valor_venta * (m.cantidad||1);
+        }
+      });
+    }
+    const elV = document.getElementById('kpi-ventas');
+    if(elV) elV.textContent = '$' + Math.round(totalVentas).toLocaleString('es-CL');
+
+    const bajo = inventory.filter(i => i.cantidad > 0 && i.estado !== 'Dado de baja' &&
+      i.cantidad <= Math.max(1, Math.round(i.cantidad * 0.3))
+    );
+    const bajoPan = document.getElementById('kpi-stock-bajo');
+    const bajoList = document.getElementById('kpi-stock-bajo-list');
+    if(bajoPan && bajoList) {
+      if(bajo.length) {
+        bajoPan.style.display = 'block';
+        bajoList.innerHTML = bajo.map(i => '• '+i.nombre+' — '+i.cantidad+' ud'+(i.lugar_nombre?' ('+i.lugar_nombre+')':'')).join('<br>');
+      } else { bajoPan.style.display = 'none'; }
+    }
+  } catch(e) { console.error('KPI error:', e); }
+}
+async function delMovimiento(btn){
+  const id = btn ? btn.dataset.id : null;
+  if(!id) return;
+  const mov = movimientos.find(m => m.id === id);
+  if(!confirm('¿Eliminar este movimiento? El stock se revertirá automáticamente.')) return;
+  const {error} = await sb.from('movimientos').delete().eq('id', id);
+  if(error){ showToast('Error al eliminar.'); return; }
+  if(mov){
+    const art = inventory.find(i => i.id === mov.articulo_id);
+    if(art){
+      const delta = mov.tipo === 'entrada' ? -mov.cantidad : mov.cantidad;
+      const nuevoStock = Math.max(0, art.cantidad + delta);
+      await sb.from('articulos').update({cantidad: nuevoStock}).eq('id', art.id);
+      art.cantidad = nuevoStock;
+    }
+  }
+  movimientos = movimientos.filter(m => m.id !== id);
+  renderMovimientos();
+  updateKPIs();
+  renderInventario();
+  showToast('✓ Movimiento eliminado y stock revertido');
+}
+
+// ── VER TODO EL HISTORIAL DE UN ARTÍCULO ──────────
+function verTodoHistorial(){
+  const item = inventory.find(i=>i.id===modalItemId); if(!item) return;
+  movHistorialId = item.id;
+  closeModal('m-detail');
+  goScreen('movimientos');
+  setTimeout(()=>{
+    document.getElementById('mov-search').value = item.nombre;
+    renderMovimientos();
+  },200);
+}
+
+// ── PANTALLA MOVIMIENTOS ──────────────────────────
+function setMovFilter(v,el){
+  movFilter=v;
+  document.querySelectorAll('.mov-filter-row .chip').forEach(c=>c.classList.remove('active'));
+  el.classList.add('active');
+  renderMovimientos();
+}
+
+async function renderMovimientos(){
+  // Cargar si el cache está vacío
+  if(!movimientos.length) await loadMovimientos();
+
+  const q=(document.getElementById('mov-search').value||'').toLowerCase();
+  const items=movimientos.filter(m=>
+    (!movFilter||m.tipo===movFilter)&&
+    (!q||(m.art_nombre||'').toLowerCase().includes(q)||(m.responsable||'').toLowerCase().includes(q)||(m.motivo||'').toLowerCase().includes(q)||(m.art_codigo||'').toLowerCase().includes(q))
+  );
+
+  // Contadores
+  document.getElementById('ms-entradas').textContent=movimientos.filter(m=>m.tipo==='entrada').length;
+  document.getElementById('ms-salidas').textContent =movimientos.filter(m=>m.tipo==='salida').length;
+
+  const body=document.getElementById('mov-list');
+  if(!items.length){
+    body.innerHTML=`<div class="empty-state"><i class="ti ti-arrow-left-right"></i><p>${movimientos.length?'Sin resultados.':'Sin movimientos registrados aún.'}</p></div>`;
+    return;
+  }
+  body.innerHTML=items.map(m=>movItemHTML(m,true)).join('');
+}
+
+// ── PATCH: openDetail para cargar historial ───────
+// Guardamos referencia a la función original y la extendemos
+const _origOpenDetail = openDetail;
+window.openDetail = function(id){
+  _origOpenDetail(id);
+  // Cargar historial con pequeño delay para que el modal abra primero
+  setTimeout(()=>loadHistorialModal(id), 150);
+};
+
+// ── PATCH: goScreen para movimientos ─────────────
+const _origGoScreen = goScreen;
+window.goScreen = function(s){
+  _origGoScreen(s);
+  if(s==='movimientos') renderMovimientos();
+};
+
+
+// ════════════════════════════════════════════════
+//  EXPORTAR EXCEL (.xlsx) — completo o por lugar
+// ════════════════════════════════════════════════
+function exportExcel(lugarId) {
+  const items = lugarId
+    ? inventory.filter(i => i.lugar_id === lugarId)
+    : inventory;
+
+  const lugar = lugarId ? lugares.find(l => l.id === lugarId) : null;
+  const nombreArchivo = lugar
+    ? `InvenControl_${lugar.nombre.replace(/\s+/g,'-')}`
+    : 'InvenControl_Completo';
+
+  // Encabezados
+  const headers = [
+    'Código', 'Nombre', 'Lugar', 'Categoría', 'Cantidad',
+    'Estado', 'Precio', 'Fecha Adquisición', 'Observaciones', 'Registrado por'
+  ];
+
+  // Filas
+  const rows = items.map(i => [
+    i.codigo || '',
+    i.nombre || '',
+    i.lugar_nombre || 'Sin lugar',
+    i.categoria || '',
+    i.cantidad || 0,
+    i.estado || '',
+    i.precio || '',
+    fmtDate(i.fecha_adq),
+    i.observaciones || '',
+    i.creado_por || ''
+  ]);
+
+  // Crear workbook
+  const wb = XLSX.utils.book_new();
+
+  // Hoja principal — todos los artículos
+  const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+
+  // Estilos de ancho de columnas
+  ws['!cols'] = [
+    {wch:14},{wch:30},{wch:18},{wch:18},{wch:10},
+    {wch:16},{wch:12},{wch:16},{wch:30},{wch:18}
+  ];
+
+  XLSX.utils.book_append_sheet(wb, ws, lugar ? lugar.nombre : 'Inventario');
+
+  // Si es completo → agregar una hoja por cada lugar
+  if (!lugarId && lugares.length) {
+    lugares.forEach(l => {
+      const arts = inventory.filter(i => i.lugar_id === l.id);
+      if (!arts.length) return;
+      const wsL = XLSX.utils.aoa_to_sheet([
+        headers,
+        ...arts.map(i => [
+          i.codigo||'', i.nombre||'', l.nombre,
+          i.categoria||'', i.cantidad||0, i.estado||'',
+          i.precio||'', fmtDate(i.fecha_adq),
+          i.observaciones||'', i.creado_por||''
+        ])
+      ]);
+      wsL['!cols'] = [{wch:14},{wch:30},{wch:18},{wch:18},{wch:10},{wch:16},{wch:12},{wch:16},{wch:30},{wch:18}];
+      XLSX.utils.book_append_sheet(wb, wsL, l.nombre.slice(0,31));
+    });
+  }
+
+  // Descargar
+  XLSX.writeFile(wb, `${nombreArchivo}_${new Date().toISOString().slice(0,10)}.xlsx`);
+  showToast('✓ Excel descargado');
+}
+
+// Renderizar botones Excel por lugar en Stats
+function renderExcelBtns() {
+  const el = document.getElementById('excel-btns');
+  if (!el) return;
+  if (!lugares.length) { el.innerHTML = ''; return; }
+  el.innerHTML = lugares.map(l => {
+    const cnt = inventory.filter(i => i.lugar_id === l.id).length;
+    if (!cnt) return '';
+    return `<button class="btn-excel" style="width:100%;margin-bottom:7px" onclick="exportExcel('${l.id}')">
+      <i class="ti ti-download"></i>${l.nombre} (${cnt} artículos)
+    </button>`;
+  }).join('');
+}
+
+// Patch renderStats para incluir botones Excel
+const _origRenderStats = renderStats;
+window.renderStats = function() {
+  _origRenderStats();
+  renderExcelBtns();
+};
+
+
+// ════════════════════════════════════════════════
+//  ESCÁNER — Cámara nativa iOS + jsQR
+//  Funciona en iPhone Safari sin permisos especiales
+// ════════════════════════════════════════════════
+
+let scanFoundId5 = null;
+let scanType5    = 'qr';
+
+window.startScan = function() { reanudarScan5(); };
+window.stopScan  = function() { scanActive = false; };
+
+window.setScanType = function(type) {
+  scanType5 = type;
+  document.getElementById('st-qr').classList.toggle('active',  type === 'qr');
+  document.getElementById('st-bar').classList.toggle('active', type === 'bar');
+  const ico   = document.getElementById('snb-ico');
+  const title = document.getElementById('snb-title');
+  if (type === 'qr') {
+    if(ico)   ico.className     = 'ti ti-qrcode';
+    if(title) title.textContent = 'Escanear código QR';
+  } else {
+    if(ico)   ico.className     = 'ti ti-barcode';
+    if(title) title.textContent = 'Escanear código de barras';
+  }
+};
+
+window.processScanImage = function(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  event.target.value = '';
+
+  const box  = document.getElementById('scan-native-box');
+  const proc = document.getElementById('scan-processing');
+  const err  = document.getElementById('scan-error');
+  if(box)  box.style.display  = 'none';
+  if(proc) proc.style.display = 'block';
+  if(err)  err.style.display  = 'none';
+  document.getElementById('scan-found').style.display    = 'none';
+  document.getElementById('scan-notfound').style.display = 'none';
+
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    const img = new Image();
+    img.onload = function() {
+      const canvas = document.createElement('canvas');
+      canvas.width  = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0);
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const result = jsQR(imageData.data, imageData.width, imageData.height, {
+        inversionAttempts: 'attemptBoth'
+      });
+      if(proc) proc.style.display = 'none';
+      if (result && result.data) {
+        procesarCodigo5(result.data);
+      } else {
+        if(box) box.style.display = 'block';
+        if(err) {
+          err.style.display = 'block';
+          document.getElementById('scan-error-msg').textContent =
+            'No se detectó ningún código. Intenta con mejor luz o más cerca.';
+        }
+      }
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+};
+
+function procesarCodigo5(data) {
+  if (navigator.vibrate) navigator.vibrate(100);
+  console.log('QR escaneado:', data);
+
+  if (scanForFieldCb) {
+    let codigo = data;
+    try { const o = JSON.parse(data); codigo = o.codigo || o.serial || data; } catch {}
+    scanForFieldCb(codigo);
+    scanForFieldCb = null;
+    goBack();
+    showToast('✓ Código capturado: ' + codigo);
+    return;
+  }
+
+  let codigo = data.trim();
+  try { const o = JSON.parse(data); codigo = o.codigo || o.serial || data; } catch {}
+
+  // Buscar por ID exacto, código exacto, o coincidencia parcial
+  const found = inventory.find(i =>
+    i.id === data.trim() ||
+    i.id === codigo ||
+    i.codigo === codigo ||
+    i.codigo === data.trim() ||
+    (i.codigo && i.codigo.trim() === codigo.trim())
+  );
+
+  console.log('Artículo encontrado:', found ? found.nombre : 'NO');
+  console.log('Inventario IDs:', inventory.map(i => i.id.substring(0,8)).join(', '));
+
+  if (found) {
+    stopLiveScanner();
+    setTimeout(() => openDetail(found.id), 200);
+  } else {
+    const box = document.getElementById('scan-native-box');
+    if(box) box.style.display = 'none';
+    document.getElementById('snf-code').textContent = codigo.substring(0,50);
+    document.getElementById('scan-notfound').style.display = 'block';
+    document.getElementById('scan-found').style.display    = 'none';
+  }
+}
+
+window.buscarManual = function() {
+  const codigo = (document.getElementById('manual-code').value || '').trim();
+  if (!codigo) { showToast('Ingresa un código'); return; }
+  const found = inventory.find(i => (i.codigo||'').toLowerCase() === codigo.toLowerCase());
+  const box = document.getElementById('scan-native-box');
+  if(box) box.style.display = 'none';
+  document.getElementById('scan-error').style.display = 'none';
+  if (found) {
+    scanFoundId5 = found.id;
+    document.getElementById('sf-nombre').textContent = found.nombre;
+    document.getElementById('sf-meta').textContent   =
+      [found.lugar_nombre, found.categoria, found.estado].filter(Boolean).join(' · ');
+    document.getElementById('scan-found').style.display    = 'flex';
+    document.getElementById('scan-notfound').style.display = 'none';
+  } else {
+    document.getElementById('snf-code').textContent        = codigo;
+    document.getElementById('scan-notfound').style.display = 'block';
+    document.getElementById('scan-found').style.display    = 'none';
+  }
+};
+
+window.abrirDesdeEscan = function() {
+  const id = scanFoundId5;
+  goBack();
+  setTimeout(() => openDetail(id), 300);
+};
+
+window.crearDesdeEscan = function() {
+  const codigo = document.getElementById('snf-code').textContent;
+  goScreen('add');
+  setTimeout(() => {
+    document.getElementById('a-code').value = codigo;
+    generateQRPreview(codigo);
+    showToast('Código cargado — completa los datos');
+  }, 300);
+};
+
+window.reanudarScan = reanudarScan5;
+function reanudarScan5() {
+  const box = document.getElementById('scan-native-box');
+  if(box) box.style.display = 'block';
+  document.getElementById('scan-found').style.display      = 'none';
+  document.getElementById('scan-notfound').style.display   = 'none';
+  document.getElementById('scan-processing').style.display = 'none';
+  document.getElementById('scan-error').style.display      = 'none';
+  const mc = document.getElementById('manual-code');
+  if(mc) mc.value = '';
+  scanFoundId5 = null;
+  scanActive   = true;
+}
+
+// Patch goScreen
+const _gsLast = window.goScreen;
+window.goScreen = function(s) {
+  if (s === 'scan') reanudarScan5();
+  else window.stopScan();
+  _gsLast(s);
+};
+
+// ════════════════════════════════════════════════
+//  EXPORTAR EXCEL (.xlsx)
+// ════════════════════════════════════════════════
+function exportExcel(lugarId) {
+  const items  = lugarId ? inventory.filter(i=>i.lugar_id===lugarId) : inventory;
+  const lugar  = lugarId ? lugares.find(l=>l.id===lugarId) : null;
+  const nombre = lugar ? `InvenControl_${lugar.nombre.replace(/\s+/g,'-')}` : 'InvenControl_Completo';
+  const headers = ['Código','Nombre','Lugar','Categoría','Cantidad','Estado','Precio','Fecha Adq.','Observaciones','Registrado por'];
+  const rows = items.map(i=>[i.codigo||'',i.nombre||'',i.lugar_nombre||'Sin lugar',i.categoria||'',i.cantidad||0,i.estado||'',i.precio||'',fmtDate(i.fecha_adq),(i.observaciones||'').replace(/,/g,';'),i.creado_por||'']);
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet([headers,...rows]);
+  ws['!cols']=[{wch:14},{wch:30},{wch:18},{wch:18},{wch:10},{wch:16},{wch:12},{wch:16},{wch:30},{wch:18}];
+  XLSX.utils.book_append_sheet(wb, ws, lugar?lugar.nombre:'Inventario');
+  if (!lugarId && lugares.length) {
+    lugares.forEach(l=>{
+      const arts=inventory.filter(i=>i.lugar_id===l.id); if(!arts.length) return;
+      const wsL=XLSX.utils.aoa_to_sheet([headers,...arts.map(i=>[i.codigo||'',i.nombre||'',l.nombre,i.categoria||'',i.cantidad||0,i.estado||'',i.precio||'',fmtDate(i.fecha_adq),(i.observaciones||'').replace(/,/g,';'),i.creado_por||''])]);
+      wsL['!cols']=[{wch:14},{wch:30},{wch:18},{wch:18},{wch:10},{wch:16},{wch:12},{wch:16},{wch:30},{wch:18}];
+      XLSX.utils.book_append_sheet(wb,wsL,l.nombre.slice(0,31));
+    });
+  }
+  XLSX.writeFile(wb,`${nombre}_${new Date().toISOString().slice(0,10)}.xlsx`);
+  showToast('✓ Excel descargado');
+}
+
+function renderExcelBtns(){
+  const el=document.getElementById('excel-btns'); if(!el) return;
+  el.innerHTML=lugares.map(l=>{
+    const cnt=inventory.filter(i=>i.lugar_id===l.id).length; if(!cnt) return '';
+    return `<button class="btn-excel" style="width:100%;margin-bottom:7px" onclick="exportExcel('${l.id}')"><i class="ti ti-download"></i>${l.nombre} (${cnt} artículos)</button>`;
+  }).join('');
+}
+
+const _origRenderStats2=renderStats;
+window.renderStats=function(){ _origRenderStats2(); renderExcelBtns(); };
+
+// ════════════════════════════════════════════════
+//  MOVIMIENTOS
+// ════════════════════════════════════════════════
+movimientos=[]; movFilter=''; movHistorialId=null;
+SCREEN_MAP['movimientos']={id:'s-movimientos',title:'Movimientos',sub:'Entradas y salidas',nav:'nb-movimientos'};
+
+async function loadMovimientos(){
+  const {data,error}=await sb.from('movimientos').select('*, articulos(id,nombre,codigo,lugar_id,lugares(nombre))').order('creado_at',{ascending:false}).limit(200);
+  if(error){console.error(error);return;}
+  movimientos=(data||[]).map(m=>({...m,art_nombre:m.articulos?.nombre||'—',art_codigo:m.articulos?.codigo||'',lugar_nombre:m.articulos?.lugares?.nombre||''}));
+}
+
+function openMovForm(tipo){
+  // Mostrar/ocultar condición según tipo
+  setTimeout(function(){
+    const condWrap = document.getElementById('mf-condicion-wrap');
+    const descWrap = document.getElementById('mf-monto-descuento-wrap');
+    const condSel  = document.getElementById('mf-condicion');
+    const descInp  = document.getElementById('mf-monto-descuento');
+    if(condWrap) condWrap.style.display = tipo === 'salida' ? 'block' : 'none';
+    if(descWrap) descWrap.style.display = 'none';
+    if(condSel)  condSel.value = '';
+    if(descInp)  descInp.value = '';
+  }, 50);
+  const item=inventory.find(i=>i.id===modalItemId); if(!item) return;
+  if(currentUser.rol==='viewer'){showToast('Sin permisos.');return;}
+  currentMovTipo=tipo;
+  const badge=document.getElementById('mf-tipo-badge');
+  badge.textContent=tipo==='entrada'?'Entrada':'Salida'; badge.className=`mov-form-tipo ${tipo}`;
+  document.getElementById('mf-art-nombre').textContent=item.nombre;
+  document.getElementById('mf-stock-actual').textContent=item.cantidad;
+  document.getElementById('mf-stock-actual').className=`mov-stock-val ${item.cantidad<=0?'stock-low':'stock-ok'}`;
+  document.getElementById('mf-destino-lbl').textContent=tipo==='salida'?'Destino':'Procedencia';
+  document.getElementById('mf-destino').placeholder=tipo==='salida'?'A dónde va':'De dónde proviene';
+  document.getElementById('mf-btn-txt').textContent=tipo==='entrada'?'Registrar entrada':'Registrar salida';
+  document.getElementById('btn-mov').style.background=tipo==='entrada'?'var(--green)':'var(--red)';
+  ['mf-cantidad','mf-motivo','mf-responsable','mf-destino','mf-notas'].forEach(id=>document.getElementById(id).value=id==='mf-cantidad'?'1':'');
+  document.getElementById('mf-err').style.display='none';
+  document.getElementById('mf-stock-preview').style.display='none';
+  document.getElementById('mf-cantidad').oninput=updateStockPreview;
+  openModal('m-mov');
+}
+currentMovTipo='entrada';
+
+function updateStockPreview(){
+  const item=inventory.find(i=>i.id===modalItemId); if(!item) return;
+  const cant=parseInt(document.getElementById('mf-cantidad').value)||0;
+  const nuevo=currentMovTipo==='entrada'?item.cantidad+cant:item.cantidad-cant;
+  const prev=document.getElementById('mf-stock-preview'),val=document.getElementById('mf-stock-nuevo');
+  prev.style.display=cant>0?'flex':'none'; val.textContent=nuevo;
+  val.className=`mov-stock-val ${nuevo<0?'stock-low':'stock-ok'}`;
+}
+
+async function saveMovimiento(){
+  const item=inventory.find(i=>i.id===modalItemId); if(!item) return;
+  const cant=parseInt(document.getElementById('mf-cantidad').value)||0;
+  const motivo=document.getElementById('mf-motivo').value;
+  const resp=(document.getElementById('mf-responsable').value||'').trim();
+  const dest=(document.getElementById('mf-destino').value||'').trim();
+  const notas=(document.getElementById('mf-notas').value||'').trim();
+  const showErr=m=>{document.getElementById('mf-err').style.display='flex';document.getElementById('mf-err-txt').textContent=m;};
+  if(cant<=0){showErr('Ingresa una cantidad válida.');return;}
+  if(currentMovTipo==='salida'&&cant>item.cantidad){showErr(`Stock insuficiente. Stock actual: ${item.cantidad}.`);return;}
+  const btn=document.getElementById('btn-mov'); btn.disabled=true;
+  try {
+    const {error:movErr}=await sb.from('movimientos').insert({articulo_id:item.id,tipo:currentMovTipo,cantidad:cant,motivo:motivo||null,responsable:resp||null,destino:dest||null,notas:notas||null,registrado_por:currentUser.nombre});
+    if(movErr) throw movErr;
+    const nuevoStock=currentMovTipo==='entrada'?item.cantidad+cant:item.cantidad-cant;
+    const {error:updErr}=await sb.from('articulos').update({cantidad:nuevoStock}).eq('id',item.id);
+    if(updErr) throw updErr;
+    item.cantidad=nuevoStock;
+    movimientos.unshift({id:'local-'+Date.now(),articulo_id:item.id,tipo:currentMovTipo,cantidad:cant,motivo:motivo||null,responsable:resp||null,destino:dest||null,notas:notas||null,registrado_por:currentUser.nombre,creado_at:new Date().toISOString(),art_nombre:item.nombre,art_codigo:item.codigo||'',lugar_nombre:item.lugar_nombre||''});
+    closeModal('m-mov'); openDetail(item.id);
+    renderLugarItems(); renderInventario(); renderLugares();
+    showToast(`✓ ${currentMovTipo==='entrada'?'Entrada':'Salida'} registrada · Stock: ${nuevoStock}`);
+  } catch(e){ console.error(e); showErr('Error al guardar.'); }
+  finally{ btn.disabled=false; }
+}
+
+async function loadHistorialModal(artId){
+  const {data}=await sb.from('movimientos').select('*').eq('articulo_id',artId).order('creado_at',{ascending:false}).limit(5);
+  const el=document.getElementById('m-historial');
+  if(!data||!data.length){el.innerHTML='<p style="font-size:13px;color:var(--ink3);padding:4px 0 8px">Sin movimientos registrados.</p>';return;}
+  el.innerHTML=data.map(m=>movItemHTML(m)).join('');
+}
+
+function movItemHTML(m,showArt=false){
+  const fecha=fmtDate(m.creado_at),hora=m.creado_at?new Date(m.creado_at).toLocaleTimeString('es-CL',{hour:'2-digit',minute:'2-digit'}):'';
+  const qty=m.tipo==='entrada'?`+${m.cantidad}`:`-${m.cantidad}`;
+  const meta=[m.responsable,m.destino,m.registrado_por?`Reg: ${m.registrado_por}`:''].filter(Boolean).join(' · ');
+  return `<div class="mov-item"><div class="mov-icon ${m.tipo}"><i class="ti ${m.tipo==='entrada'?'ti-arrow-bar-to-down':'ti-arrow-bar-up'}"></i></div><div class="mov-body"><div class="mov-top">${showArt?`<span class="mov-art">${m.art_nombre||'—'}</span>`:`<span class="mov-art">${m.tipo==='entrada'?'Entrada':'Salida'}</span>`}<span class="mov-qty ${m.tipo}">${qty} uds.</span></div><div class="mov-meta">${fecha} ${hora}${meta?' · '+meta:''}</div>${m.motivo?`<span class="mov-motivo">${m.motivo}</span>`:''}</div></div>`;
+}
+
+function verTodoHistorial(){
+  const item=inventory.find(i=>i.id===modalItemId); if(!item) return;
+  closeModal('m-detail'); goScreen('movimientos');
+  setTimeout(()=>{ document.getElementById('mov-search').value=item.nombre; renderMovimientos(); },200);
+}
+
+function setMovFilter(v,el){ movFilter=v; document.querySelectorAll('.mov-filter-row .chip').forEach(c=>c.classList.remove('active')); el.classList.add('active'); renderMovimientos(); }
+
+async function renderMovimientos(){
+  if(!movimientos.length) await loadMovimientos();
+  const q=(document.getElementById('mov-search').value||'').toLowerCase();
+  const items=movimientos.filter(m=>(!movFilter||m.tipo===movFilter)&&(!q||(m.art_nombre||'').toLowerCase().includes(q)||(m.responsable||'').toLowerCase().includes(q)||(m.motivo||'').toLowerCase().includes(q)));
+  document.getElementById('ms-entradas').textContent=movimientos.filter(m=>m.tipo==='entrada').length;
+  document.getElementById('ms-salidas').textContent =movimientos.filter(m=>m.tipo==='salida').length;
+  const body=document.getElementById('mov-list');
+  if(!items.length){body.innerHTML=`<div class="empty-state"><i class="ti ti-arrow-left-right"></i><p>${movimientos.length?'Sin resultados.':'Sin movimientos aún.'}</p></div>`;return;}
+  body.innerHTML=items.map(m=>movItemHTML(m,true)).join('');
+}
+
+const _origOpenDetail2=openDetail;
+window.openDetail=function(id){ _origOpenDetail2(id); setTimeout(()=>loadHistorialModal(id),150); };
+
+// ════════════════════════════════════════════════
+//  ESCÁNER CON IA — Lee QR y códigos de barras
+//  usando Claude Vision API
+// ════════════════════════════════════════════════
+window.processScanImage = async function(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  event.target.value = '';
+
+  const box  = document.getElementById('scan-native-box');
+  const proc = document.getElementById('scan-processing');
+  const err  = document.getElementById('scan-error');
+  if(box)  box.style.display  = 'none';
+  if(proc) proc.style.display = 'block';
+  if(err)  err.style.display  = 'none';
+  document.getElementById('scan-found').style.display    = 'none';
+  document.getElementById('scan-notfound').style.display = 'none';
+
+  try {
+    // 1. Intentar con jsQR primero (rápido, sin API)
+    const reader = new FileReader();
+    reader.onload = async function(e) {
+      const img = new Image();
+      img.onload = async function() {
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0);
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+
+        // Intentar jsQR
+        let codigo = null;
+        try {
+          const result = jsQR(imageData.data, imageData.width, imageData.height, {
+            inversionAttempts: 'attemptBoth'
+          });
+          if (result?.data) codigo = result.data;
+        } catch(e) {}
+
+        if (codigo) {
+          if(proc) proc.style.display = 'none';
+          procesarCodigo5(codigo);
+          return;
+        }
+
+        // 2. Si jsQR falla, usar Claude IA para leer el código
+        document.getElementById('fp-txt') && (document.getElementById('fp-txt').textContent = 'Analizando con IA...');
+        try {
+          const base64 = e.target.result.split(',')[1];
+          const mediaType = file.type || 'image/jpeg';
+
+          const response = await fetch('https://api.anthropic.com/v1/messages', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              model: 'claude-sonnet-4-20250514',
+              max_tokens: 200,
+              messages: [{
+                role: 'user',
+                content: [
+                  {
+                    type: 'image',
+                    source: { type: 'base64', media_type: mediaType, data: base64 }
+                  },
+                  {
+                    type: 'text',
+                    text: 'Esta imagen contiene un código QR o código de barras. Lee el código y devuelve SOLO el texto/número del código, sin explicaciones ni caracteres extra. Si no hay código visible, responde exactamente: NO_CODE'
+                  }
+                ]
+              }]
+            })
+          });
+
+          const data = await response.json();
+          const texto = data?.content?.[0]?.text?.trim();
+
+          if(proc) proc.style.display = 'none';
+
+          if (!texto || texto === 'NO_CODE' || texto.includes('No') || texto.includes('no')) {
+            if(box) box.style.display = 'block';
+            if(err) {
+              err.style.display = 'block';
+              document.getElementById('scan-error-msg').textContent =
+                'No se detectó ningún código. Intenta con mejor iluminación y más cerca del código.';
+            }
+          } else {
+            procesarCodigo5(texto);
+          }
+        } catch(apiErr) {
+          console.error('AI scan error:', apiErr);
+          if(proc) proc.style.display = 'none';
+          if(box) box.style.display = 'block';
+          if(err) {
+            err.style.display = 'block';
+            document.getElementById('scan-error-msg').textContent =
+              'No se pudo leer el código. Ingresa el código manualmente abajo.';
+          }
+        }
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  } catch(e) {
+    if(proc) proc.style.display = 'none';
+    if(box) box.style.display = 'block';
+    showToast('Error al procesar imagen');
+  }
+};
+
+
+function renderStats(){
+  document.getElementById('st-total').textContent=inventory.length;
+  document.getElementById('st-op').textContent=inventory.filter(i=>i.estado==='Operativo').length;
+  document.getElementById('st-mant').textContent=inventory.filter(i=>['Mantención','Revisión'].includes(i.estado)).length;
+  document.getElementById('st-baja').textContent=inventory.filter(i=>i.estado==='Dado de baja').length;
+  const row=(name,val,sub)=>'<div class="stat-row"><div><div class="stat-row-name">'+name+'</div>'+(sub?'<div style="font-size:11px;color:var(--ink3)">'+sub+'</div>':'')+'</div><span class="stat-row-val">'+val+'</span></div>';
+  document.getElementById('st-lugares').innerHTML=lugares.length?lugares.map(l=>row(l.nombre,inventory.filter(i=>i.lugar_id===l.id).length+' art.',l.descripcion||'')).join(''):'<p style="font-size:13px;color:var(--ink3)">Sin lugares.</p>';
+  const cats={};
+  inventory.forEach(i=>{ if(i.categoria) cats[i.categoria]=(cats[i.categoria]||0)+1; });
+  document.getElementById('st-cats').innerHTML=Object.keys(cats).length?Object.entries(cats).sort((a,b)=>b[1]-a[1]).map(([c,n])=>row(c,n+' art.')).join(''):'<p style="font-size:13px;color:var(--ink3)">Sin datos.</p>';
+  const noOp=inventory.filter(i=>i.estado!=='Operativo');
+  document.getElementById('st-noOp').innerHTML=noOp.length?noOp.map(i=>'<div class="stat-row"><div><div class="stat-row-name">'+i.nombre+'</div><div style="font-size:11px;color:var(--ink3)">'+(i.lugar_nombre||'Sin lugar')+'</div></div>'+estadoBadge(i.estado)+'</div>').join(''):'<p style="font-size:13px;color:var(--ink3)">Todo operativo.</p>';
+  const excelBtns=document.getElementById('excel-btns');
+  if(excelBtns){
+    excelBtns.innerHTML='';
+    lugares.forEach(l=>{
+      const b=document.createElement('button');
+      b.className='btn-excel';
+      b.style.cssText='width:100%;margin-bottom:6px';
+      b.textContent='Descargar '+l.nombre+' (.xlsx)';
+      b.addEventListener('click',function(){exportExcel(l.id);});
+      excelBtns.appendChild(b);
+    });
+  }
+}
+</script>
+<script>
+
+// ════════════════════════════════════════════════
+//  ESCÁNER EN VIVO con cámara + IA como fallback
+// ════════════════════════════════════════════════
+let _scanStream = null;
+let _scanAnimFrame = null;
+let _scanActive = false;
+
+window.startLiveScanner = async function() {
+  const box = document.getElementById('scan-native-box');
+  if (box) box.style.display = 'none';
+  
+  // Crear UI del escáner en vivo
+  let liveDiv = document.getElementById('scan-live-container');
+  if (!liveDiv) {
+    liveDiv = document.createElement('div');
+    liveDiv.id = 'scan-live-container';
+    liveDiv.style.cssText = 'position:relative;width:100%;max-width:400px;margin:0 auto;border-radius:12px;overflow:hidden;background:#000';
+    liveDiv.innerHTML = `
+      <video id="scan-video" autoplay playsinline muted
+        style="width:100%;display:block;border-radius:12px"></video>
+      <canvas id="scan-canvas" style="display:none"></canvas>
+      <div style="position:absolute;inset:0;border:3px solid rgba(255,255,255,0.4);
+        border-radius:12px;pointer-events:none">
+        <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+          width:200px;height:200px;border:3px solid #fff;border-radius:8px"></div>
+      </div>
+      <div id="scan-live-status" style="position:absolute;bottom:10px;left:0;right:0;
+        text-align:center;color:#fff;font-size:13px;font-family:Inter,sans-serif;
+        background:rgba(0,0,0,0.5);padding:6px">Apunta al código QR o de barras</div>
+      <button onclick="stopLiveScanner()" style="position:absolute;top:10px;right:10px;
+        background:rgba(0,0,0,0.6);color:#fff;border:none;border-radius:50%;
+        width:36px;height:36px;font-size:20px;cursor:pointer;display:flex;
+        align-items:center;justify-content:center">×</button>
+    `;
+    const scanSection = document.getElementById('s-scan');
+    if (scanSection) scanSection.insertBefore(liveDiv, scanSection.firstChild);
+  }
+  liveDiv.style.display = 'block';
+
+  try {
+    _scanStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
+    });
+    const video = document.getElementById('scan-video');
+    if (video) {
+      video.srcObject = _scanStream;
+      await video.play();
+      _scanActive = true;
+      _scanLoop();
+    }
+  } catch(e) {
+    liveDiv.style.display = 'none';
+    if (box) box.style.display = 'block';
+    showToast('Cámara no disponible. Usa foto.');
+  }
+};
+
+function _scanLoop() {
+  if (!_scanActive) return;
+  const video = document.getElementById('scan-video');
+  const canvas = document.getElementById('scan-canvas');
+  if (!video || !canvas || video.readyState < 2) {
+    _scanAnimFrame = requestAnimationFrame(_scanLoop);
+    return;
+  }
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(video, 0, 0);
+  try {
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const result = jsQR(imageData.data, imageData.width, imageData.height, {
+      inversionAttempts: 'attemptBoth'
+    });
+    if (result && result.data) {
+      stopLiveScanner();
+      procesarCodigo5(result.data);
+      return;
+    }
+  } catch(e) {}
+  _scanAnimFrame = requestAnimationFrame(_scanLoop);
+}
+
+window.stopLiveScanner = function() {
+  _scanActive = false;
+  if (_scanAnimFrame) cancelAnimationFrame(_scanAnimFrame);
+  if (_scanStream) {
+    _scanStream.getTracks().forEach(t => t.stop());
+    _scanStream = null;
+  }
+  const liveDiv = document.getElementById('scan-live-container');
+  if (liveDiv) liveDiv.style.display = 'none';
+  const box = document.getElementById('scan-native-box');
+  if (box) box.style.display = 'block';
+};
+
+window.processScanImage = async function(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  event.target.value = '';
+
+  const box  = document.getElementById('scan-native-box');
+  const proc = document.getElementById('scan-processing');
+  const errD = document.getElementById('scan-error');
+  if(box)  box.style.display  = 'none';
+  if(proc) proc.style.display = 'block';
+  if(errD) errD.style.display = 'none';
+  document.getElementById('scan-found').style.display    = 'none';
+  document.getElementById('scan-notfound').style.display = 'none';
+
+  const reader = new FileReader();
+  reader.onload = async function(e) {
+    const img = new Image();
+    img.onload = async function() {
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0);
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      let codigo = null;
+      try {
+        const result = jsQR(imageData.data, imageData.width, imageData.height, {
+          inversionAttempts: 'attemptBoth'
+        });
+        if (result && result.data) codigo = result.data;
+      } catch(er) {}
+
+      if (codigo) {
+        if(proc) proc.style.display = 'none';
+        procesarCodigo5(codigo);
+        return;
+      }
+
+      // IA como fallback
+      const fpTxt = document.getElementById('fp-txt');
+      if(fpTxt) fpTxt.textContent = 'Analizando con IA...';
+      try {
+        const base64 = e.target.result.split(',')[1];
+        const resp = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model: 'claude-sonnet-4-20250514',
+            max_tokens: 100,
+            messages: [{
+              role: 'user',
+              content: [
+                { type: 'image', source: { type: 'base64',
+                  media_type: file.type || 'image/jpeg', data: base64 } },
+                { type: 'text', text: 'Lee el código QR o código de barras de esta imagen. Responde SOLO con el texto/número del código, sin explicaciones. Si no hay código, responde: NO_CODE' }
+              ]
+            }]
+          })
+        });
+        const data = await resp.json();
+        const texto = (data?.content?.[0]?.text || '').trim();
+        if(proc) proc.style.display = 'none';
+        if (!texto || texto === 'NO_CODE' || texto.startsWith('No') || texto.startsWith('Lo siento')) {
+          if(box) box.style.display = 'block';
+          if(errD) {
+            errD.style.display = 'block';
+            document.getElementById('scan-error-msg').textContent =
+              'No se detectó código. Intenta con mejor iluminación.';
+          }
+        } else {
+          procesarCodigo5(texto);
+        }
+      } catch(apiErr) {
+        if(proc) proc.style.display = 'none';
+        if(box) box.style.display = 'block';
+        if(errD) {
+          errD.style.display = 'block';
+          document.getElementById('scan-error-msg').textContent =
+            'No se pudo leer. Ingresa el código manualmente.';
+        }
+      }
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+};
+
+
+// ═══════════════════════════════════════════════
+// NUEVAS FUNCIONALIDADES
+// ═══════════════════════════════════════════════
+
+// Toggle condición descuento en modal movimiento
+function toggleDescuento() {
+  const cond = document.getElementById('mf-condicion').value;
+  const wrap = document.getElementById('mf-monto-descuento-wrap');
+  if(wrap) wrap.style.display = cond === 'descuento' ? 'block' : 'none';
+}
+
+// Mostrar condición de salida cuando tipo es salida
+// openMovForm patched directly
+
+// saveMovimiento patched directly above
+
+// KPIs
+async function updateKPIs() {
+  try {
+    const totalDisp = inventory.reduce((s,i) => s + (i.cantidad||0), 0);
+    const el = document.getElementById('kpi-disponibles');
+    if(el) el.textContent = totalDisp;
+
+    const {data: movs} = await sb.from('movimientos')
+      .select('notas, cantidad, articulo_id, monto_venta')
+      .eq('tipo', 'salida');
+
+    let totalVentas = 0;
+    if(movs) {
+      movs.forEach(m => {
+        const notas = (m.notas||'').toLowerCase();
+        if(notas.includes('venta') || notas.includes('descuento')) {
+          if(m.monto_venta) {
+            totalVentas += parseFloat(m.monto_venta)||0;
+          } else {
+            const art = inventory.find(i => i.id === m.articulo_id);
+            if(art && art.valor_venta) {
+              totalVentas += art.valor_venta * (m.cantidad||1);
+            }
           }
         }
       });
     }
 
-    const elVentas = document.getElementById('kpi-ventas');
-    if(elVentas) elVentas.textContent = '$' + Math.round(totalVentas).toLocaleString('es-CL');
+    const ventasEl = document.getElementById('kpi-ventas');
+    if(ventasEl) ventasEl.textContent = '$' + Math.round(totalVentas).toLocaleString('es-CL');
 
-    // Stock bajo (30% o menos)
-    const stockBajo = inventory.filter(i => i.cantidad > 0 && i.estado !== 'Dado de baja' &&
-      i.cantidad <= Math.max(1, Math.round((i.cantidad_inicial || i.cantidad * 3) * 0.3))
-    );
-    const bajoPan  = document.getElementById('kpi-stock-bajo');
+    const stockBajo = inventory.filter(i => {
+      if(!i.cantidad || i.cantidad <= 0) return false;
+      const inicial = i.cantidad_inicial || i.cantidad;
+      return i.cantidad <= Math.max(1, Math.round(inicial * 0.3));
+    });
+    const bajoPan = document.getElementById('kpi-stock-bajo');
     const bajoList = document.getElementById('kpi-stock-bajo-list');
     if(bajoPan && bajoList) {
       if(stockBajo.length) {
         bajoPan.style.display = 'block';
         bajoList.innerHTML = stockBajo.map(i =>
-          '• ' + i.nombre + ' — ' + i.cantidad + ' ud' + (i.lugar_nombre ? ' (' + i.lugar_nombre + ')' : '')
+          '• ' + i.nombre + ' — ' + i.cantidad + ' ud' + (i.lugar_nombre?' ('+i.lugar_nombre+')':'')
         ).join('<br>');
       } else {
         bajoPan.style.display = 'none';
@@ -1642,163 +2516,13 @@ async function updateKPIs() {
   }
 }
 
+// Actualizar KPIs al entrar a la pantalla
+// goScreen KPI update patched directly
 
-async function delMovimiento(btn){
-  const id = btn ? btn.dataset.id : null;
-  if(!id) return;
-  const mov = movimientos.find(m => m.id === id);
-  if(!confirm('¿Eliminar este movimiento? Se revertirá el stock automáticamente.')) return;
-  const {error} = await sb.from('movimientos').delete().eq('id', id);
-  if(error){ showToast('Error al eliminar.'); return; }
-
-  // Revertir stock
-  if(mov){
-    const art = inventory.find(i => i.id === mov.articulo_id);
-    if(art){
-      const stockDelta = mov.tipo === 'entrada' ? -mov.cantidad : mov.cantidad;
-      const nuevoStock = Math.max(0, art.cantidad + stockDelta);
-      await sb.from('articulos').update({cantidad: nuevoStock}).eq('id', art.id);
-      art.cantidad = nuevoStock;
-    }
-  }
-
-  movimientos = movimientos.filter(m => m.id !== id);
-  renderMovimientos();
-  updateKPIs();
-  renderInventario();
-  showToast('✓ Movimiento eliminado y stock revertido');
-}
-
-function editMovimiento(btn){
-  if(!btn) return;
-  const id = btn.dataset.id;
-  const tipo = btn.dataset.tipo;
-  const cantidad = btn.dataset.cantidad;
-  const motivo = btn.dataset.motivo;
-  const notas = btn.dataset.notas;
-  const responsable = btn.dataset.responsable;
-  const monto = btn.dataset.monto;
-
-  let modal = document.getElementById('m-edit-mov');
-  if(!modal){
-    modal = document.createElement('div');
-    modal.id = 'm-edit-mov';
-    modal.className = 'modal-ov';
-    modal.innerHTML = `
-      <div class="modal-sh" style="max-height:85%">
-        <div class="modal-handle"></div>
-        <div class="modal-body">
-          <div class="m-title">Editar movimiento</div>
-          <div class="field" style="margin-top:14px">
-            <label>Cantidad</label>
-            <input type="number" id="em-cantidad" min="1">
-          </div>
-          <div class="field">
-            <label>Motivo</label>
-            <select id="em-motivo">
-              <option value="">Seleccionar...</option>
-              <option>Compra / Adquisición</option>
-              <option>Devolución</option>
-              <option>Préstamo</option>
-              <option>Uso interno</option>
-              <option>Venta</option>
-              <option>Pérdida o extravío</option>
-              <option>Traslado entre lugares</option>
-              <option>Otro</option>
-            </select>
-          </div>
-          <div class="field">
-            <label>Responsable</label>
-            <input type="text" id="em-responsable" placeholder="Responsable">
-          </div>
-          <div class="field">
-            <label>Notas</label>
-            <textarea id="em-notas" style="height:64px"></textarea>
-          </div>
-          <div class="field" id="em-monto-wrap">
-            <label>Monto de venta ($)</label>
-            <input type="number" id="em-monto" min="0" placeholder="0">
-          </div>
-          <div id="em-err" class="alert-box" style="display:none;margin-bottom:10px">
-            <span id="em-err-txt"></span>
-          </div>
-          <div class="btn-pair">
-            <button class="btn-sec" onclick="closeModal('m-edit-mov')">Cancelar</button>
-            <button class="btn-pri" onclick="saveEditMovimiento()">Guardar</button>
-          </div>
-        </div>
-      </div>`;
-    modal.onclick = e => { if(e.target===modal) closeModal('m-edit-mov'); };
-    document.body.appendChild(modal);
-  }
-
-  document.getElementById('em-cantidad').value = cantidad;
-  document.getElementById('em-motivo').value = motivo;
-  document.getElementById('em-responsable').value = responsable;
-  document.getElementById('em-notas').value = notas;
-  document.getElementById('em-monto').value = monto;
-  document.getElementById('em-monto-wrap').style.display = tipo === 'salida' ? 'block' : 'none';
-  document.getElementById('em-err').style.display = 'none';
-  modal._editId = id;
-  openModal('m-edit-mov');
-}
-
-async function saveEditMovimiento(){
-  const modal = document.getElementById('m-edit-mov');
-  const id = modal._editId;
-  const movOld = movimientos.find(m => m.id === id);
-  if(!movOld){ showToast('Movimiento no encontrado.'); return; }
-
-  const cantNueva = parseInt(document.getElementById('em-cantidad').value)||0;
-  const motivo = document.getElementById('em-motivo').value;
-  const responsable = (document.getElementById('em-responsable').value||'').trim();
-  const notas = (document.getElementById('em-notas').value||'').trim();
-  const monto_venta = parseFloat(document.getElementById('em-monto').value)||null;
-
-  if(cantNueva <= 0){
-    document.getElementById('em-err').style.display='flex';
-    document.getElementById('em-err-txt').textContent='Cantidad debe ser mayor a 0.';
-    return;
-  }
-
-  // Calcular diferencia de stock
-  const cantVieja = movOld.cantidad || 0;
-  const diff = cantNueva - cantVieja; // positivo = más cantidad en movimiento
-
-  // Actualizar movimiento en BD
-  const {error} = await sb.from('movimientos').update({
-    cantidad: cantNueva,
-    motivo: motivo||null,
-    responsable: responsable||null,
-    notas: notas||null,
-    monto_venta
-  }).eq('id', id);
-
-  if(error){ showToast('Error al guardar.'); return; }
-
-  // Actualizar stock del artículo
-  if(diff !== 0){
-    const art = inventory.find(i => i.id === movOld.articulo_id);
-    if(art){
-      // Si era entrada: más cantidad = más stock; si era salida: más cantidad = menos stock
-      const stockDelta = movOld.tipo === 'entrada' ? diff : -diff;
-      const nuevoStock = Math.max(0, art.cantidad + stockDelta);
-      await sb.from('articulos').update({cantidad: nuevoStock}).eq('id', art.id);
-      art.cantidad = nuevoStock;
-    }
-  }
-
-  // Actualizar cache local
-  const idx2 = movimientos.findIndex(m => m.id === id);
-  if(idx2 >= 0){
-    movimientos[idx2] = {...movimientos[idx2], cantidad: cantNueva, motivo, responsable, notas, monto_venta};
-  }
-
-  closeModal('m-edit-mov');
-  renderMovimientos();
-  updateKPIs();
-  renderInventario();
-  showToast('✓ Movimiento actualizado');
-}
+// valor_venta handled directly in saveArticulo and populateForm
 
 
+</script>
+
+</body>
+</html>
