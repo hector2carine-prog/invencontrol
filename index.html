@@ -1595,20 +1595,22 @@ async function updateKPIs() {
     if(el) el.textContent = totalDisp;
 
     const {data: movs} = await sb.from('movimientos')
-      .select('notas, cantidad, articulo_id, monto_venta')
+      .select('notas, cantidad, articulo_id, monto_venta, motivo')
       .eq('tipo', 'salida');
 
     let totalVentas = 0;
     if(movs) {
       movs.forEach(m => {
         const notas = (m.notas||'').toLowerCase();
-        if(notas.includes('venta') || notas.includes('descuento')) {
+        const motivo = (m.motivo||'').toLowerCase();
+        const esVenta = notas.includes('venta') || motivo.includes('venta') || notas.includes('descuento');
+        if(esVenta) {
           if(m.monto_venta) {
             totalVentas += parseFloat(m.monto_venta)||0;
           } else {
             const art = inventory.find(i => i.id === m.articulo_id);
             if(art && art.valor_venta) {
-              totalVentas += art.valor_venta * (m.cantidad||1);
+              totalVentas += (art.valor_venta) * (m.cantidad||1);
             }
           }
         }
@@ -2208,10 +2210,13 @@ function movItemHTML(m, showArt=false){
   const qty   = m.tipo==='entrada' ? '+'+m.cantidad : '-'+m.cantidad;
   const meta  = [m.responsable, m.destino, m.registrado_por ? 'Reg: '+m.registrado_por : ''].filter(Boolean).join(' · ');
   const montoStr = m.monto_venta ? '<div style="font-size:12px;color:#16a34a;font-weight:600;margin-top:2px">💰 $'+Math.round(m.monto_venta).toLocaleString('es-CL')+'</div>' : '';
-  const delBtn = currentUser && currentUser.rol==='admin'
-    ? '<button onclick="delMovimiento(this)" data-id="'+m.id+'" style="margin-left:auto;background:none;border:none;color:var(--red);cursor:pointer;font-size:18px;padding:2px 6px;flex-shrink:0">🗑</button>'
+  const adminBtns = currentUser && currentUser.rol==='admin'
+    ? '<div style="display:flex;gap:4px;margin-left:auto;flex-shrink:0">' +
+      '<button onclick="editMovimiento(this)" data-id="'+m.id+'" data-tipo="'+m.tipo+'" data-cantidad="'+m.cantidad+'" data-motivo="'+(m.motivo||'')+'" data-notas="'+(m.notas||'')+'" data-responsable="'+(m.responsable||'')+'" data-monto="'+(m.monto_venta||'')+'" style="background:none;border:none;color:var(--blue);cursor:pointer;font-size:16px;padding:2px 6px">✏️</button>' +
+      '<button onclick="delMovimiento(this)" data-id="'+m.id+'" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:16px;padding:2px 6px">🗑</button>' +
+      '</div>'
     : '';
-  return '<div class="mov-item">' +
+  return '<div class="mov-item" style="align-items:center">' +
     '<div class="mov-icon '+m.tipo+'">'+( m.tipo==='entrada'?'↓':'↑' )+'</div>' +
     '<div class="mov-body" style="flex:1">' +
       '<div class="mov-top">' +
@@ -2223,7 +2228,7 @@ function movItemHTML(m, showArt=false){
       (m.notas?'<div style="font-size:12px;color:var(--ink3);margin-top:3px">'+m.notas+'</div>':'') +
       montoStr +
     '</div>' +
-    delBtn +
+    adminBtns +
   '</div>';
 }
 
@@ -2237,6 +2242,112 @@ async function delMovimiento(btn){
   renderMovimientos();
   updateKPIs();
   showToast('Movimiento eliminado');
+}
+
+function editMovimiento(btn){
+  if(!btn) return;
+  const id = btn.dataset.id;
+  const tipo = btn.dataset.tipo;
+  const cantidad = btn.dataset.cantidad;
+  const motivo = btn.dataset.motivo;
+  const notas = btn.dataset.notas;
+  const responsable = btn.dataset.responsable;
+  const monto = btn.dataset.monto;
+
+  let modal = document.getElementById('m-edit-mov');
+  if(!modal){
+    modal = document.createElement('div');
+    modal.id = 'm-edit-mov';
+    modal.className = 'modal-ov';
+    modal.innerHTML = `
+      <div class="modal-sh" style="max-height:85%">
+        <div class="modal-handle"></div>
+        <div class="modal-body">
+          <div class="m-title">Editar movimiento</div>
+          <div class="field" style="margin-top:14px">
+            <label>Cantidad</label>
+            <input type="number" id="em-cantidad" min="1">
+          </div>
+          <div class="field">
+            <label>Motivo</label>
+            <select id="em-motivo">
+              <option value="">Seleccionar...</option>
+              <option>Compra / Adquisición</option>
+              <option>Devolución</option>
+              <option>Préstamo</option>
+              <option>Uso interno</option>
+              <option>Venta</option>
+              <option>Pérdida o extravío</option>
+              <option>Traslado entre lugares</option>
+              <option>Otro</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Responsable</label>
+            <input type="text" id="em-responsable" placeholder="Responsable">
+          </div>
+          <div class="field">
+            <label>Notas</label>
+            <textarea id="em-notas" style="height:64px"></textarea>
+          </div>
+          <div class="field" id="em-monto-wrap">
+            <label>Monto de venta ($)</label>
+            <input type="number" id="em-monto" min="0" placeholder="0">
+          </div>
+          <div id="em-err" class="alert-box" style="display:none;margin-bottom:10px">
+            <span id="em-err-txt"></span>
+          </div>
+          <div class="btn-pair">
+            <button class="btn-sec" onclick="closeModal('m-edit-mov')">Cancelar</button>
+            <button class="btn-pri" onclick="saveEditMovimiento()">Guardar</button>
+          </div>
+        </div>
+      </div>`;
+    modal.onclick = e => { if(e.target===modal) closeModal('m-edit-mov'); };
+    document.body.appendChild(modal);
+  }
+
+  document.getElementById('em-cantidad').value = cantidad;
+  document.getElementById('em-motivo').value = motivo;
+  document.getElementById('em-responsable').value = responsable;
+  document.getElementById('em-notas').value = notas;
+  document.getElementById('em-monto').value = monto;
+  document.getElementById('em-monto-wrap').style.display = tipo === 'salida' ? 'block' : 'none';
+  document.getElementById('em-err').style.display = 'none';
+  modal._editId = id;
+  openModal('m-edit-mov');
+}
+
+async function saveEditMovimiento(){
+  const modal = document.getElementById('m-edit-mov');
+  const id = modal._editId;
+  const cantidad = parseInt(document.getElementById('em-cantidad').value)||0;
+  const motivo = document.getElementById('em-motivo').value;
+  const responsable = (document.getElementById('em-responsable').value||'').trim();
+  const notas = (document.getElementById('em-notas').value||'').trim();
+  const monto_venta = parseFloat(document.getElementById('em-monto').value)||null;
+
+  if(cantidad <= 0){
+    document.getElementById('em-err').style.display='flex';
+    document.getElementById('em-err-txt').textContent='Cantidad debe ser mayor a 0.';
+    return;
+  }
+
+  const {error} = await sb.from('movimientos').update({
+    cantidad, motivo: motivo||null, responsable: responsable||null,
+    notas: notas||null, monto_venta
+  }).eq('id', id);
+
+  if(error){ showToast('Error al guardar.'); return; }
+
+  const idx = movimientos.findIndex(m => m.id === id);
+  if(idx >= 0){
+    movimientos[idx] = {...movimientos[idx], cantidad, motivo, responsable, notas, monto_venta};
+  }
+  closeModal('m-edit-mov');
+  renderMovimientos();
+  updateKPIs();
+  showToast('✓ Movimiento actualizado');
 }
 
 // ── VER TODO EL HISTORIAL DE UN ARTÍCULO ──────────
@@ -3033,20 +3144,22 @@ async function updateKPIs() {
     if(el) el.textContent = totalDisp;
 
     const {data: movs} = await sb.from('movimientos')
-      .select('notas, cantidad, articulo_id, monto_venta')
+      .select('notas, cantidad, articulo_id, monto_venta, motivo')
       .eq('tipo', 'salida');
 
     let totalVentas = 0;
     if(movs) {
       movs.forEach(m => {
         const notas = (m.notas||'').toLowerCase();
-        if(notas.includes('venta') || notas.includes('descuento')) {
+        const motivo = (m.motivo||'').toLowerCase();
+        const esVenta = notas.includes('venta') || motivo.includes('venta') || notas.includes('descuento');
+        if(esVenta) {
           if(m.monto_venta) {
             totalVentas += parseFloat(m.monto_venta)||0;
           } else {
             const art = inventory.find(i => i.id === m.articulo_id);
             if(art && art.valor_venta) {
-              totalVentas += art.valor_venta * (m.cantidad||1);
+              totalVentas += (art.valor_venta) * (m.cantidad||1);
             }
           }
         }
