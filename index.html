@@ -2196,7 +2196,7 @@ function movItemHTML(m, showArt=false){
   const meta  = [m.responsable, m.destino, m.registrado_por ? 'Reg: '+m.registrado_por : ''].filter(Boolean).join(' · ');
   const montoStr = m.monto_venta ? '<div style="font-size:12px;color:#16a34a;font-weight:600;margin-top:2px">💰 $'+Math.round(m.monto_venta).toLocaleString('es-CL')+'</div>' : '';
   const delBtn = currentUser && currentUser.rol==='admin'
-    ? '<button onclick="delMovimiento(''+m.id+'')" style="margin-left:auto;background:none;border:none;color:var(--red);cursor:pointer;font-size:18px;padding:2px 6px;flex-shrink:0">🗑</button>'
+    ? '<button onclick="delMovimiento(this)" data-id="'+m.id+'" style="margin-left:auto;background:none;border:none;color:var(--red);cursor:pointer;font-size:18px;padding:2px 6px;flex-shrink:0">🗑</button>'
     : '';
   return '<div class="mov-item">' +
     '<div class="mov-icon '+m.tipo+'">'+( m.tipo==='entrada'?'↓':'↑' )+'</div>' +
@@ -2214,13 +2214,15 @@ function movItemHTML(m, showArt=false){
   '</div>';
 }
 
-async function delMovimiento(id){
+async function delMovimiento(btn){
+  const id = btn ? btn.dataset.id : null;
   if(!id) return;
   if(!confirm('¿Eliminar este movimiento? El stock NO se revertirá automáticamente.')) return;
   const {error} = await sb.from('movimientos').delete().eq('id', id);
   if(error){ showToast('Error al eliminar.'); return; }
   movimientos = movimientos.filter(m => m.id !== id);
   renderMovimientos();
+  updateKPIs();
   showToast('Movimiento eliminado');
 }
 
