@@ -1577,51 +1577,46 @@ function toggleDescuento() {
 // KPIs
 async function updateKPIs() {
   try {
-    // Artículos disponibles (suma de cantidades)
     const totalDisp = inventory.reduce((s,i) => s + (i.cantidad||0), 0);
     const el = document.getElementById('kpi-disponibles');
     if(el) el.textContent = totalDisp;
 
-    // Suma de ventas desde movimientos
     const {data: movs} = await sb.from('movimientos')
-      .select('notas, cantidad, articulo_id')
+      .select('notas, cantidad, articulo_id, monto_venta')
       .eq('tipo', 'salida');
-    
+
     let totalVentas = 0;
     if(movs) {
       movs.forEach(m => {
-        // Buscar artículo para obtener valor_venta
-        const art = inventory.find(i => i.id === m.articulo_id);
-        const notas = (m.notas || '').toLowerCase();
-        if(notas.includes('venta')) {
-          // Si tiene descuento extraer monto
-          const descMatch = (m.notas||'').match(/descuento \$(\d+)/i);
-          if(descMatch) {
-            totalVentas += parseFloat(descMatch[1]) * (m.cantidad||1);
-          } else if(art && art.valor_venta) {
-            totalVentas += art.valor_venta * (m.cantidad||1);
+        const notas = (m.notas||'').toLowerCase();
+        if(notas.includes('venta') || notas.includes('descuento')) {
+          if(m.monto_venta) {
+            totalVentas += parseFloat(m.monto_venta)||0;
+          } else {
+            const art = inventory.find(i => i.id === m.articulo_id);
+            if(art && art.valor_venta) {
+              totalVentas += art.valor_venta * (m.cantidad||1);
+            }
           }
         }
       });
     }
-    
-    const ventasEl = document.getElementById('kpi-ventas');
-    if(ventasEl) ventasEl.textContent = '$' + totalVentas.toLocaleString('es-CL');
 
-    // Stock bajo (30% del stock inicial o menos de 30% del máximo)
+    const ventasEl = document.getElementById('kpi-ventas');
+    if(ventasEl) ventasEl.textContent = '$' + Math.round(totalVentas).toLocaleString('es-CL');
+
     const stockBajo = inventory.filter(i => {
-      if(!i.cantidad) return false;
-      // Alerta si quedan 30% o menos (mínimo 1)
-      return i.cantidad <= Math.max(1, Math.round((i.cantidad_inicial || i.cantidad) * 0.3));
+      if(!i.cantidad || i.cantidad <= 0) return false;
+      const inicial = i.cantidad_inicial || i.cantidad;
+      return i.cantidad <= Math.max(1, Math.round(inicial * 0.3));
     });
-    
     const bajoPan = document.getElementById('kpi-stock-bajo');
     const bajoList = document.getElementById('kpi-stock-bajo-list');
     if(bajoPan && bajoList) {
       if(stockBajo.length) {
         bajoPan.style.display = 'block';
-        bajoList.innerHTML = stockBajo.map(i => 
-          `• ${i.nombre} — ${i.cantidad} ud${i.lugar_nombre ? ' ('+i.lugar_nombre+')' : ''}`
+        bajoList.innerHTML = stockBajo.map(i =>
+          '• ' + i.nombre + ' — ' + i.cantidad + ' ud' + (i.lugar_nombre?' ('+i.lugar_nombre+')':'')
         ).join('<br>');
       } else {
         bajoPan.style.display = 'none';
@@ -2113,6 +2108,17 @@ async function saveMovimiento(){
 
   try {
     // 1. Insertar movimiento
+    // Calcular monto_venta para KPIs
+    let montoVenta = null;
+    if(currentMovTipo === 'salida') {
+      const cond = document.getElementById('mf-condicion')?.value;
+      const montoDesc = document.getElementById('mf-monto-descuento')?.value;
+      if(cond === 'descuento' && montoDesc) {
+        montoVenta = parseFloat(montoDesc) || null;
+      } else if(cond === 'venta' && item.valor_venta) {
+        montoVenta = item.valor_venta * cant;
+      }
+    }
     const {error:movErr} = await sb.from('movimientos').insert({
       articulo_id:    item.id,
       tipo:           currentMovTipo,
@@ -2121,6 +2127,7 @@ async function saveMovimiento(){
       responsable:    resp||null,
       destino:        dest||null,
       notas:          notas||null,
+      monto_venta:    montoVenta,
       registrado_por: currentUser.nombre,
     });
     if(movErr) throw movErr;
@@ -2185,20 +2192,36 @@ async function loadHistorialModal(artId){
 function movItemHTML(m, showArt=false){
   const fecha = fmtDate(m.creado_at);
   const hora  = m.creado_at ? new Date(m.creado_at).toLocaleTimeString('es-CL',{hour:'2-digit',minute:'2-digit'}) : '';
-  const qty   = m.tipo==='entrada' ? `+${m.cantidad}` : `-${m.cantidad}`;
-  const meta  = [m.responsable, m.destino, m.registrado_por ? `Reg: ${m.registrado_por}` : ''].filter(Boolean).join(' · ');
-  return `<div class="mov-item">
-    <div class="mov-icon ${m.tipo}"><i class="ti ${m.tipo==='entrada'?'ti-arrow-bar-to-down':'ti-arrow-bar-up'}" aria-hidden="true"></i></div>
-    <div class="mov-body">
-      <div class="mov-top">
-        ${showArt ? `<span class="mov-art">${m.art_nombre||'—'}</span>` : `<span class="mov-art">${m.tipo==='entrada'?'Entrada':'Salida'}</span>`}
-        <span class="mov-qty ${m.tipo}">${qty} uds.</span>
-      </div>
-      <div class="mov-meta">${fecha} ${hora}${meta?' · '+meta:''}</div>
-      ${m.motivo?`<span class="mov-motivo">${m.motivo}</span>`:''}
-      ${m.notas?`<div style="font-size:12px;color:var(--ink3);margin-top:3px">${m.notas}</div>`:''}
-    </div>
-  </div>`;
+  const qty   = m.tipo==='entrada' ? '+'+m.cantidad : '-'+m.cantidad;
+  const meta  = [m.responsable, m.destino, m.registrado_por ? 'Reg: '+m.registrado_por : ''].filter(Boolean).join(' · ');
+  const montoStr = m.monto_venta ? '<div style="font-size:12px;color:#16a34a;font-weight:600;margin-top:2px">💰 $'+Math.round(m.monto_venta).toLocaleString('es-CL')+'</div>' : '';
+  const delBtn = currentUser && currentUser.rol==='admin'
+    ? '<button onclick="delMovimiento(''+m.id+'')" style="margin-left:auto;background:none;border:none;color:var(--red);cursor:pointer;font-size:18px;padding:2px 6px;flex-shrink:0">🗑</button>'
+    : '';
+  return '<div class="mov-item">' +
+    '<div class="mov-icon '+m.tipo+'">'+( m.tipo==='entrada'?'↓':'↑' )+'</div>' +
+    '<div class="mov-body" style="flex:1">' +
+      '<div class="mov-top">' +
+        (showArt ? '<span class="mov-art">'+(m.art_nombre||'—')+'</span>' : '<span class="mov-art">'+(m.tipo==='entrada'?'Entrada':'Salida')+'</span>') +
+        '<span class="mov-qty '+m.tipo+'">'+qty+' uds.</span>' +
+      '</div>' +
+      '<div class="mov-meta">'+fecha+' '+hora+(meta?' · '+meta:'')+'</div>' +
+      (m.motivo?'<span class="mov-motivo">'+m.motivo+'</span>':'') +
+      (m.notas?'<div style="font-size:12px;color:var(--ink3);margin-top:3px">'+m.notas+'</div>':'') +
+      montoStr +
+    '</div>' +
+    delBtn +
+  '</div>';
+}
+
+async function delMovimiento(id){
+  if(!id) return;
+  if(!confirm('¿Eliminar este movimiento? El stock NO se revertirá automáticamente.')) return;
+  const {error} = await sb.from('movimientos').delete().eq('id', id);
+  if(error){ showToast('Error al eliminar.'); return; }
+  movimientos = movimientos.filter(m => m.id !== id);
+  renderMovimientos();
+  showToast('Movimiento eliminado');
 }
 
 // ── VER TODO EL HISTORIAL DE UN ARTÍCULO ──────────
@@ -2990,51 +3013,46 @@ function toggleDescuento() {
 // KPIs
 async function updateKPIs() {
   try {
-    // Artículos disponibles (suma de cantidades)
     const totalDisp = inventory.reduce((s,i) => s + (i.cantidad||0), 0);
     const el = document.getElementById('kpi-disponibles');
     if(el) el.textContent = totalDisp;
 
-    // Suma de ventas desde movimientos
     const {data: movs} = await sb.from('movimientos')
-      .select('notas, cantidad, articulo_id')
+      .select('notas, cantidad, articulo_id, monto_venta')
       .eq('tipo', 'salida');
-    
+
     let totalVentas = 0;
     if(movs) {
       movs.forEach(m => {
-        // Buscar artículo para obtener valor_venta
-        const art = inventory.find(i => i.id === m.articulo_id);
-        const notas = (m.notas || '').toLowerCase();
-        if(notas.includes('venta')) {
-          // Si tiene descuento extraer monto
-          const descMatch = (m.notas||'').match(/descuento \$(\d+)/i);
-          if(descMatch) {
-            totalVentas += parseFloat(descMatch[1]) * (m.cantidad||1);
-          } else if(art && art.valor_venta) {
-            totalVentas += art.valor_venta * (m.cantidad||1);
+        const notas = (m.notas||'').toLowerCase();
+        if(notas.includes('venta') || notas.includes('descuento')) {
+          if(m.monto_venta) {
+            totalVentas += parseFloat(m.monto_venta)||0;
+          } else {
+            const art = inventory.find(i => i.id === m.articulo_id);
+            if(art && art.valor_venta) {
+              totalVentas += art.valor_venta * (m.cantidad||1);
+            }
           }
         }
       });
     }
-    
-    const ventasEl = document.getElementById('kpi-ventas');
-    if(ventasEl) ventasEl.textContent = '$' + totalVentas.toLocaleString('es-CL');
 
-    // Stock bajo (30% del stock inicial o menos de 30% del máximo)
+    const ventasEl = document.getElementById('kpi-ventas');
+    if(ventasEl) ventasEl.textContent = '$' + Math.round(totalVentas).toLocaleString('es-CL');
+
     const stockBajo = inventory.filter(i => {
-      if(!i.cantidad) return false;
-      // Alerta si quedan 30% o menos (mínimo 1)
-      return i.cantidad <= Math.max(1, Math.round((i.cantidad_inicial || i.cantidad) * 0.3));
+      if(!i.cantidad || i.cantidad <= 0) return false;
+      const inicial = i.cantidad_inicial || i.cantidad;
+      return i.cantidad <= Math.max(1, Math.round(inicial * 0.3));
     });
-    
     const bajoPan = document.getElementById('kpi-stock-bajo');
     const bajoList = document.getElementById('kpi-stock-bajo-list');
     if(bajoPan && bajoList) {
       if(stockBajo.length) {
         bajoPan.style.display = 'block';
-        bajoList.innerHTML = stockBajo.map(i => 
-          `• ${i.nombre} — ${i.cantidad} ud${i.lugar_nombre ? ' ('+i.lugar_nombre+')' : ''}`
+        bajoList.innerHTML = stockBajo.map(i =>
+          '• ' + i.nombre + ' — ' + i.cantidad + ' ud' + (i.lugar_nombre?' ('+i.lugar_nombre+')':'')
         ).join('<br>');
       } else {
         bajoPan.style.display = 'none';
