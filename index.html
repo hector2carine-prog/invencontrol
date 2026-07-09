@@ -1179,7 +1179,20 @@ window.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('splash').style.display='none';
   
   const raw=sessionStorage.getItem('inv_session');
-  if(raw){ try{ currentUser=JSON.parse(raw); await launchApp(); return; }catch{ sessionStorage.removeItem('inv_session'); } }
+  if(raw){
+    try{
+      const saved=JSON.parse(raw);
+      // Verificar que el usuario aún existe y está activo en BD
+      const {data:u,error}=await sb.from('usuarios').select('id,nombre,usuario,rol,activo').eq('id',saved.id).single();
+      if(!error && u && u.activo){
+        currentUser={...saved,...u};
+        sessionStorage.setItem('inv_session',JSON.stringify(currentUser));
+        await launchApp();
+        return;
+      }
+    }catch(e){}
+    sessionStorage.removeItem('inv_session');
+  }
   
   document.getElementById('login').style.display='flex';
   document.getElementById('lp').addEventListener('keydown',e=>{ if(e.key==='Enter') doLogin(); });
