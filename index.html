@@ -1122,7 +1122,6 @@ h++){g.push("<tr>");for(var i=0;d>i;i++)g.push('<td style="border:0;border-colla
 ,QRCode.CorrectLevel=d}();
 </script>
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/quagga@0.12.1/dist/quagga.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script>
 
@@ -1136,86 +1135,6 @@ const STORAGE_BUCKET = 'inventario-fotos';
 
 </script>
 <script>
-// ── UTILIDADES ────────────────────────────────────
-function hexToLight(hex){
-  if(!hex) return '#EEF3F8';
-  const r=parseInt(hex.slice(1,3),16), g=parseInt(hex.slice(3,5),16), b=parseInt(hex.slice(5,7),16);
-  return 'rgba('+r+','+g+','+b+',0.12)';
-}
-
-function fmtDate(d){
-  if(!d) return '';
-  try {
-    const date = new Date(d);
-    return date.toLocaleDateString('es-CL',{day:'2-digit',month:'2-digit',year:'numeric'});
-  } catch(e){ return d; }
-}
-
-let toastTimerU = null;
-function showToast(msg){
-  const t = document.getElementById('toast');
-  if(!t) return;
-  t.textContent = msg;
-  t.style.display = 'block';
-  t.classList.add('show');
-  clearTimeout(toastTimerU);
-  toastTimerU = setTimeout(()=>{
-    t.classList.remove('show');
-    setTimeout(()=>{ t.style.display='none'; }, 300);
-  }, 2500);
-}
-
-function openModal(id){
-  const m = document.getElementById(id);
-  if(!m) return;
-  m.classList.add('open');
-  m.style.display = 'flex';
-  setTimeout(()=>m.classList.add('open'), 10);
-}
-
-function closeModal(id){
-  const m = document.getElementById(id);
-  if(!m) return;
-  m.classList.remove('open');
-  setTimeout(()=>{ m.style.display=''; }, 300);
-}
-
-function maybeCloseModal(id, event){
-  if(event.target === document.getElementById(id)) closeModal(id);
-}
-
-const ICON_OPTIONS = ['ti-building-warehouse','ti-home','ti-box','ti-tool','ti-truck','ti-archive','ti-briefcase','ti-building'];
-const COLOR_OPTIONS = ['#1B3A5C','#C0281A','#0D7A4E','#92520A','#5B21B6','#0E7490','#374151','#BE185D'];
-
-function renderIconPicker(){
-  const el = document.getElementById('icon-picker');
-  if(!el) return;
-  el.innerHTML = ICON_OPTIONS.map(ic =>
-    '<button type="button" class="icon-opt" data-icon="'+ic+'" onclick="selectIcon(this)" style="width:40px;height:40px;border:1px solid var(--border);border-radius:8px;background:var(--card);cursor:pointer;font-size:18px">📦</button>'
-  ).join('');
-}
-
-function selectIcon(btn){
-  document.querySelectorAll('.icon-opt').forEach(b=>b.style.borderColor='var(--border)');
-  btn.style.borderColor = 'var(--blue)';
-  document.getElementById('nl-icono').value = btn.dataset.icon;
-}
-
-function renderColorPicker(){
-  const el = document.getElementById('color-picker');
-  if(!el) return;
-  el.innerHTML = COLOR_OPTIONS.map(c =>
-    '<button type="button" class="color-opt" data-color="'+c+'" onclick="selectColor(this)" style="width:32px;height:32px;border-radius:50%;background:'+c+';border:2px solid transparent;cursor:pointer;margin-right:6px"></button>'
-  ).join('');
-}
-
-function selectColor(btn){
-  document.querySelectorAll('.color-opt').forEach(b=>b.style.borderColor='transparent');
-  btn.style.borderColor = '#111';
-  document.getElementById('nl-color').value = btn.dataset.color;
-}
-
-
 // ── Detector de errores global ──
 window.addEventListener('error', function(e){
   document.getElementById('splash').style.display='none';
@@ -1262,6 +1181,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   if(raw){
     try{
       const saved=JSON.parse(raw);
+      // Verificar que el usuario aún existe y está activo en BD
       const {data:u,error}=await sb.from('usuarios').select('id,nombre,usuario,rol,activo').eq('id',saved.id).single();
       if(!error && u && u.activo){
         currentUser={...saved,...u};
@@ -1273,7 +1193,6 @@ window.addEventListener('DOMContentLoaded', async () => {
     sessionStorage.removeItem('inv_session');
   }
   
-  document.getElementById('app').style.display='none';
   document.getElementById('login').style.display='flex';
   document.getElementById('lp').addEventListener('keydown',e=>{ if(e.key==='Enter') doLogin(); });
   document.getElementById('lu').addEventListener('keydown',e=>{ if(e.key==='Enter') document.getElementById('lp').focus(); });
@@ -1673,7 +1592,6 @@ async function updateKPIs() {
     const noDisp = inventory.filter(i => i.cantidad <= 0 || i.estado === 'Dado de baja').length;
     const elDisp = document.getElementById('kpi-disponibles');
     if(elDisp) elDisp.textContent = noDisp;
-
     const {data: movs} = await sb.from('movimientos')
       .select('cantidad, articulo_id, monto_venta, motivo, notas')
       .eq('tipo', 'salida');
@@ -1694,10 +1612,8 @@ async function updateKPIs() {
     }
     const elV = document.getElementById('kpi-ventas');
     if(elV) elV.textContent = '$' + Math.round(totalVentas).toLocaleString('es-CL');
-
     const bajo = inventory.filter(i => i.cantidad > 0 && i.estado !== 'Dado de baja' &&
-      i.cantidad <= Math.max(1, Math.round(i.cantidad * 0.3))
-    );
+      i.cantidad <= Math.max(1, Math.round(i.cantidad * 0.3)));
     const bajoPan = document.getElementById('kpi-stock-bajo');
     const bajoList = document.getElementById('kpi-stock-bajo-list');
     if(bajoPan && bajoList) {
@@ -1708,6 +1624,597 @@ async function updateKPIs() {
     }
   } catch(e) { console.error('KPI error:', e); }
 }
+
+// Actualizar KPIs al entrar a la pantalla
+// goScreen KPI update patched directly
+
+// valor_venta handled directly in saveArticulo and populateForm
+function editCurrent(){ if(currentUser.rol==='viewer'){ showToast('Sin permisos.'); return; } const item=inventory.find(i=>i.id===modalItemId); if(!item) return; closeModal('m-detail'); editingId=modalItemId; goScreen('add'); setTimeout(()=>populateForm(item),200); }
+function populateForm(item){
+  document.getElementById('a-code').value=item.codigo||'';
+  document.getElementById('a-name').value=item.nombre||'';
+  document.getElementById('a-cat').value=item.categoria||'';
+  document.getElementById('a-ubicacion') && (document.getElementById('a-ubicacion').value=item.ubicacion||'');
+  document.getElementById('a-valor-venta') && (document.getElementById('a-valor-venta').value=item.valor_venta||'');
+  document.getElementById('a-qty').value=item.cantidad||1;
+  document.getElementById('a-est').value=item.estado||'Operativo';
+  document.getElementById('a-price').value=item.precio||'';
+  document.getElementById('a-date').value=item.fecha_adq||'';
+  document.getElementById('a-obs').value=item.observaciones||'';
+  document.getElementById('a-lugar').value=item.lugar_id||'';
+  document.getElementById('hdr-title').textContent='Editar artículo';
+  document.getElementById('save-label').textContent='Guardar cambios';
+  if(item.codigo) generateQRPreview(item.codigo);
+  addPhotos=[]; renderPhotosGrid();
+}
+async function editEstado(){ if(currentUser.rol==='viewer'){ showToast('Sin permisos.'); return; } const item=inventory.find(i=>i.id===modalItemId); if(!item) return; const estados=['Operativo','Mantención','Revisión','Dado de baja']; const v=prompt(`Estado de "${item.nombre}":\n1. Operativo\n2. Mantención\n3. Revisión\n4. Dado de baja\n\nActual: ${item.estado}\nIngresa número (1-4):`,estados.indexOf(item.estado)+1); if(!v) return; const n=parseInt(v)-1; if(n<0||n>3){ showToast('Opción inválida'); return; } const {error}=await sb.from('articulos').update({estado:estados[n]}).eq('id',item.id); if(error){ showToast('Error.'); return; } item.estado=estados[n]; closeModal('m-detail'); renderLugarItems(); renderInventario(); renderLugares(); showToast('Estado actualizado'); }
+async function deleteItem(){ if(currentUser.rol==='viewer'){ showToast('Sin permisos.'); return; } const item=inventory.find(i=>i.id===modalItemId); if(!item) return; if(!confirm(`¿Eliminar "${item.nombre}"?`)) return; for(const url of(item.fotos||[])){ const path=url.split(`/${STORAGE_BUCKET}/`)[1]; if(path) await sb.storage.from(STORAGE_BUCKET).remove([path]); } const {error}=await sb.from('articulos').delete().eq('id',item.id); if(error){ showToast('Error.'); return; } inventory=inventory.filter(i=>i.id!==modalItemId); closeModal('m-detail'); updateCount(); renderLugarItems(); renderInventario(); renderLugares(); showToast('Artículo eliminado'); }
+
+// ── GESTIÓN LUGARES ───────────────────────────────
+const ICONOS=['ti-building-warehouse','ti-building','ti-truck','ti-tool','ti-archive','ti-box','ti-car','ti-device-laptop','ti-shirt','ti-packages','ti-map-pin','ti-home'];
+const COLORES=['#111111','#CC2229','#185FA5','#1A8A5A','#C07A10','#7B5EA7','#D85A30','#444444'];
+
+function showLugaresAdmin(){ if(currentUser.rol!=='admin'){ showToast('Sin permisos.'); return; } closeUM(); goScreen('lugares-admin'); }
+function openAddLugar(){ showLugaresAdmin(); }
+function renderIconPicker(){ document.getElementById('icon-picker').innerHTML=ICONOS.map(ic=>`<button class="ip-btn${ic===document.getElementById('nl-icono').value?' active':''}" onclick="selectIcono('${ic}')"><i class="ti ${ic}" aria-hidden="true"></i></button>`).join(''); }
+function selectIcono(ic){ document.getElementById('nl-icono').value=ic; document.querySelectorAll('.ip-btn').forEach(b=>b.classList.toggle('active',b.querySelector('i').className.includes(ic))); }
+function renderColorPicker(){ document.getElementById('color-picker').innerHTML=COLORES.map(c=>`<div class="cp-dot${c===document.getElementById('nl-color').value?' active':''}" style="background:${c}" onclick="selectColor('${c}')"></div>`).join(''); }
+function selectColor(c){ document.getElementById('nl-color').value=c; document.querySelectorAll('.cp-dot').forEach(d=>d.classList.toggle('active',d.style.background===c||d.style.backgroundColor.replace(/ /g,'')===c.replace(/ /g,''))); }
+
+async function saveLugar(){
+  const nombre=(document.getElementById('nl-nombre').value||'').trim();
+  const err=m=>{document.getElementById('nl-err').style.display='flex';document.getElementById('nl-err-txt').textContent=m;};
+  if(!nombre){ err('Ingresa el nombre del lugar.'); return; }
+  const payload={nombre,descripcion:(document.getElementById('nl-desc').value||'').trim()||null,icono:document.getElementById('nl-icono').value||'ti-building-warehouse',color:document.getElementById('nl-color').value||'#111111',orden:lugares.length+1};
+  const {data,error}=await sb.from('lugares').insert(payload).select().single();
+  if(error){ error.code==='23505'?err('Ese nombre ya existe.'):err('Error al crear.'); return; }
+  lugares.push(data); ['nl-nombre','nl-desc'].forEach(id=>document.getElementById(id).value=''); document.getElementById('nl-err').style.display='none';
+  fillDataLists(); renderLugaresAdmin(); renderLugares(); showToast('✓ Lugar creado');
+}
+function renderLugaresAdmin(){
+  const body=document.getElementById('lugares-admin-list');
+  if(!lugares.length){ body.innerHTML='<div class="empty-state"><p>Sin lugares aún.</p></div>'; return; }
+  body.innerHTML=lugares.map(l=>{
+    const cnt=inventory.filter(i=>i.lugar_id===l.id).length;
+    return `<div class="lugar-admin-card">
+      <div class="lac-icon" style="background:${hexToLight(l.color||'#111')}">
+        <i class="ti ${l.icono||'ti-building-warehouse'}" style="color:${l.color||'#111'};font-size:18px"></i>
+      </div>
+      <div class="lac-info">
+        <div class="lac-name">${l.nombre}</div>
+        ${l.descripcion?`<div class="lac-desc">${l.descripcion}</div>`:''}
+        ${l.subdivisiones?`<div style="font-size:11px;color:var(--ink3)">Subdivisiones: ${l.subdivisiones}</div>`:''}
+      </div>
+      <div class="lac-right">
+        <span class="lac-cnt">${cnt} art.</span>
+        <button class="btn-sec sm" style="padding:5px 10px;font-size:12px" onclick="openEditLugar('${l.id}')">✏️</button>
+        <button class="btn-del-lugar" onclick="deleteLugar('${l.id}')">🗑</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function openEditLugar(id){
+  const l=lugares.find(x=>x.id===id);
+  if(!l) return;
+  // Mostrar modal de edición
+  let modal=document.getElementById('m-edit-lugar');
+  if(!modal){
+    modal=document.createElement('div');
+    modal.id='m-edit-lugar';
+    modal.className='modal-ov';
+    modal.innerHTML=`
+      <div class="modal-sh" style="max-height:85%">
+        <div class="modal-handle"></div>
+        <div class="modal-body">
+          <div class="m-title">Editar lugar</div>
+          <div class="field" style="margin-top:14px">
+            <label>Nombre *</label>
+            <input type="text" id="el-nombre" placeholder="Nombre del lugar">
+          </div>
+          <div class="field">
+            <label>Descripción</label>
+            <input type="text" id="el-desc" placeholder="Descripción breve">
+          </div>
+          <div class="field">
+            <label>Subdivisiones (ej: Estante A, Estante B)</label>
+            <input type="text" id="el-subdiv" placeholder="Ej: Sector 1, Sector 2, Bodega...">
+          </div>
+          <div id="el-err" class="alert-box" style="display:none;margin-bottom:10px">
+            <span id="el-err-txt"></span>
+          </div>
+          <div class="btn-pair">
+            <button class="btn-sec" onclick="closeModal('m-edit-lugar')">Cancelar</button>
+            <button class="btn-pri" onclick="saveEditLugar()">Guardar</button>
+          </div>
+        </div>
+      </div>`;
+    modal.onclick=e=>{ if(e.target===modal) closeModal('m-edit-lugar'); };
+    document.body.appendChild(modal);
+  }
+  document.getElementById('el-nombre').value=l.nombre||'';
+  document.getElementById('el-desc').value=l.descripcion||'';
+  document.getElementById('el-subdiv').value=l.subdivisiones||'';
+  modal._editId=id;
+  openModal('m-edit-lugar');
+}
+
+async function saveEditLugar(){
+  const modal=document.getElementById('m-edit-lugar');
+  const id=modal._editId;
+  const nombre=(document.getElementById('el-nombre').value||'').trim();
+  const descripcion=(document.getElementById('el-desc').value||'').trim();
+  const subdivisiones=(document.getElementById('el-subdiv').value||'').trim();
+  if(!nombre){
+    document.getElementById('el-err').style.display='flex';
+    document.getElementById('el-err-txt').textContent='El nombre es obligatorio.';
+    return;
+  }
+  const {error}=await sb.from('lugares').update({nombre,descripcion,subdivisiones}).eq('id',id);
+  if(error){ showToast('Error al guardar.'); return; }
+  const l=lugares.find(x=>x.id===id);
+  if(l){ l.nombre=nombre; l.descripcion=descripcion; l.subdivisiones=subdivisiones; }
+  closeModal('m-edit-lugar');
+  renderLugaresAdmin();
+  renderLugares();
+  showToast('✓ Lugar actualizado');
+}
+async function deleteLugar(id){ const l=lugares.find(x=>x.id===id); if(!l) return; const cnt=inventory.filter(i=>i.lugar_id===id).length; if(!confirm(`¿Eliminar "${l.nombre}"?${cnt>0?`\n${cnt} artículo${cnt>1?'s':''} quedarán sin lugar.`:''}`)) return; const {error}=await sb.from('lugares').delete().eq('id',id); if(error){ showToast('Error.'); return; } lugares=lugares.filter(x=>x.id!==id); inventory.forEach(i=>{ if(i.lugar_id===id){ i.lugar_id=null; i.lugar_nombre=null; } }); fillDataLists(); renderLugaresAdmin(); renderLugares(); showToast('Lugar eliminado'); }
+
+// ── ESTADÍSTICAS ──────────────────────────────────
+function renderStats(){
+  document.getElementById('st-total').textContent=inventory.length;
+  document.getElementById('st-op').textContent=inventory.filter(i=>i.estado==='Operativo').length;
+  document.getElementById('st-mant').textContent=inventory.filter(i=>['Mantención','Revisión'].includes(i.estado)).length;
+  document.getElementById('st-baja').textContent=inventory.filter(i=>i.estado==='Dado de baja').length;
+  const row=(name,val,sub)=>`<div class="stat-row"><div><div class="stat-row-name">${name}</div>${sub?`<div style="font-size:11px;color:var(--ink3)">${sub}</div>`:''}</div><span class="stat-row-val">${val}</span></div>`;
+  document.getElementById('st-lugares').innerHTML=lugares.length?lugares.map(l=>row(l.nombre,inventory.filter(i=>i.lugar_id===l.id).length+' art.',l.descripcion||'')).join(''):'<p style="font-size:13px;color:var(--ink3)">Sin lugares.</p>';
+  const cats={}; inventory.forEach(i=>{ if(i.categoria) cats[i.categoria]=(cats[i.categoria]||0)+1; }); document.getElementById('st-cats').innerHTML=Object.keys(cats).length?Object.entries(cats).sort((a,b)=>b[1]-a[1]).map(([c,n])=>row(c,n+' art.')).join(''):'<p style="font-size:13px;color:var(--ink3)">Sin datos.</p>';
+  const noOp=inventory.filter(i=>i.estado!=='Operativo'); document.getElementById('st-noOp').innerHTML=noOp.length?noOp.map(i=>`<div class="stat-row"><div><div class="stat-row-name">${i.nombre}</div><div style="font-size:11px;color:var(--ink3)">${i.lugar_nombre||'Sin lugar'}</div></div>${estadoBadge(i.estado)}</div>`).join(''):'<p style="font-size:13px;color:var(--ink3)">✓ Todo operativo.</p>';
+}
+
+// ── CSV ───────────────────────────────────────────
+function exportCSV(){ const h=['Código','Nombre','Lugar','Categoría','Cantidad','Estado','Precio','Fecha Adq.','Observaciones','Creado por']; const rows=inventory.map(i=>[i.codigo||'',i.nombre,i.lugar_nombre||'',i.categoria||'',i.cantidad,i.estado,i.precio||'',fmtDate(i.fecha_adq),(i.observaciones||'').replace(/,/g,';'),i.creado_por||'']); const csv=[h,...rows].map(r=>r.map(v=>`"${v}"`).join(',')).join('\n'); const a=document.createElement('a'); a.download=`Inventario_${new Date().toISOString().slice(0,10)}.csv`; a.href=URL.createObjectURL(new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8;'})); a.click(); showToast('✓ CSV exportado'); }
+
+// ── CONTRASEÑA ────────────────────────────────────
+function showChgPass(){
+  closeUM();
+  ['cp-old','cp-new','cp-conf'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('cp-err').style.display='none';
+  openModal('m-pass');
+}
+async function doChgPass(){
+  const o=document.getElementById('cp-old').value;
+  const n=document.getElementById('cp-new').value;
+  const c=document.getElementById('cp-conf').value;
+  const err=m=>{
+    document.getElementById('cp-err').style.display='flex';
+    document.getElementById('cp-err-txt').textContent=m;
+  };
+  if(!o||!n||!c){err('Completa todos los campos.');return;}
+  if(n.length<8){err('Mínimo 8 caracteres.');return;}
+  if(n!==c){err('No coinciden.');return;}
+  const oh=await sha256(o);
+  const def={admin:'Admin123*',editor:'Editor123*'};
+  if(oh!==currentUser.pass_hash&&!(def[currentUser.usuario]&&o===def[currentUser.usuario])){
+    err('Contraseña actual incorrecta.');return;
+  }
+  const nh=await sha256(n);
+  const {error}=await sb.from('usuarios').update({pass_hash:nh}).eq('id',currentUser.id);
+  if(error){err('Error.');return;}
+  currentUser.pass_hash=nh;
+  sessionStorage.setItem('inv_session',JSON.stringify(currentUser));
+  closeModal('m-pass');
+  showToast('✓ Contraseña actualizada');
+}
+
+// ── USUARIOS ──────────────────────────────────────
+function showUsersPanel(){ if(currentUser.rol!=='admin'){ showToast('Sin permisos.'); return; } closeUM(); renderUsersList(); goScreen('users'); }
+async function renderUsersList(){
+  const {data}=await sb.from('usuarios').select('*').order('creado_at');
+  const rows=(data||[]).map(u=>{
+    const isMe=u.id===currentUser.id;
+    return `<div class="user-row" style="flex-direction:column;align-items:stretch;gap:8px;padding:14px">
+      <div style="display:flex;align-items:center;gap:10px">
+        <div style="width:38px;height:38px;border-radius:50%;background:var(--blue-l);
+          display:flex;align-items:center;justify-content:center;font-weight:700;
+          color:var(--blue);font-size:15px">${(u.nombre||'?')[0].toUpperCase()}</div>
+        <div style="flex:1">
+          <div class="ur-name">${u.nombre}</div>
+          <div class="ur-meta">@${u.usuario} · <span class="role-pill rp-${u.rol}">${roleLabel(u.rol)}</span></div>
+        </div>
+        ${!isMe?`<button class="btn-del-user" onclick="delUser('${u.id}')" title="Eliminar">🗑</button>`:'<span style="font-size:11px;color:var(--ink3)">(tú)</span>'}
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn-sec sm" style="font-size:12px;padding:5px 10px"
+          onclick="openResetPass('${u.id}','${u.nombre.replace(/'/g,"\\'")}')">
+          🔑 Cambiar contraseña
+        </button>
+        <button class="btn-sec sm" style="font-size:12px;padding:5px 10px"
+          onclick="openEditUser('${u.id}','${u.nombre.replace(/'/g,"\\'")}','${u.usuario}','${u.rol}')">
+          ✏️ Editar
+        </button>
+      </div>
+    </div>`;
+  }).join('');
+  document.getElementById('users-list-panel').innerHTML=
+    `<div class="users-list-card">${rows}</div>`;
+}
+
+function openResetPass(userId, userName){
+  let modal=document.getElementById('m-admin-reset');
+  if(!modal){
+    modal=document.createElement('div');
+    modal.id='m-admin-reset';
+    modal.className='modal-ov';
+    modal.innerHTML=`
+      <div class="modal-sh" style="max-height:70%">
+        <div class="modal-handle"></div>
+        <div class="modal-body">
+          <div class="m-title">Cambiar contraseña</div>
+          <div id="ar-user-name" style="font-size:13px;color:var(--ink3);margin:4px 0 14px"></div>
+          <div class="field">
+            <label>Nueva contraseña</label>
+            <input type="password" id="ar-pass" placeholder="Mínimo 8 caracteres">
+          </div>
+          <div class="field">
+            <label>Confirmar contraseña</label>
+            <input type="password" id="ar-conf" placeholder="Repite la contraseña">
+          </div>
+          <div id="ar-err" class="alert-box" style="display:none;margin-bottom:10px">
+            <span id="ar-err-txt"></span>
+          </div>
+          <div class="btn-pair">
+            <button class="btn-sec" onclick="closeModal('m-admin-reset')">Cancelar</button>
+            <button class="btn-pri" onclick="doAdminResetPass()">Guardar</button>
+          </div>
+        </div>
+      </div>`;
+    modal.onclick=e=>{ if(e.target===modal) closeModal('m-admin-reset'); };
+    document.body.appendChild(modal);
+  }
+  document.getElementById('ar-user-name').textContent=`Usuario: ${userName}`;
+  document.getElementById('ar-pass').value='';
+  document.getElementById('ar-conf').value='';
+  document.getElementById('ar-err').style.display='none';
+  modal._userId=userId;
+  openModal('m-admin-reset');
+}
+
+async function doAdminResetPass(){
+  const modal=document.getElementById('m-admin-reset');
+  const pass=document.getElementById('ar-pass').value;
+  const conf=document.getElementById('ar-conf').value;
+  const err=m=>{ document.getElementById('ar-err').style.display='flex'; document.getElementById('ar-err-txt').textContent=m; };
+  if(!pass||!conf){ err('Completa todos los campos.'); return; }
+  if(pass.length<8){ err('Mínimo 8 caracteres.'); return; }
+  if(pass!==conf){ err('Las contraseñas no coinciden.'); return; }
+  const hash=await sha256(pass);
+  const {error}=await sb.from('usuarios').update({pass_hash:hash}).eq('id',modal._userId);
+  if(error){ err('Error al guardar.'); return; }
+  closeModal('m-admin-reset');
+  showToast('✓ Contraseña actualizada');
+}
+
+function openEditUser(userId, userName, userUser, userRol){
+  let modal=document.getElementById('m-edit-user');
+  if(!modal){
+    modal=document.createElement('div');
+    modal.id='m-edit-user';
+    modal.className='modal-ov';
+    modal.innerHTML=`
+      <div class="modal-sh" style="max-height:80%">
+        <div class="modal-handle"></div>
+        <div class="modal-body">
+          <div class="m-title">Editar usuario</div>
+          <div class="field" style="margin-top:14px">
+            <label>Nombre completo</label>
+            <input type="text" id="eu-nombre" placeholder="Nombre">
+          </div>
+          <div class="field">
+            <label>Usuario</label>
+            <input type="text" id="eu-usuario" placeholder="usuario" autocapitalize="none">
+          </div>
+          <div class="field">
+            <label>Rol</label>
+            <select id="eu-rol">
+              <option value="viewer">Solo lectura</option>
+              <option value="editor">Editor</option>
+              <option value="admin">Administrador</option>
+            </select>
+          </div>
+          <div id="eu-err" class="alert-box" style="display:none;margin-bottom:10px">
+            <span id="eu-err-txt"></span>
+          </div>
+          <div class="btn-pair">
+            <button class="btn-sec" onclick="closeModal('m-edit-user')">Cancelar</button>
+            <button class="btn-pri" onclick="doEditUser()">Guardar</button>
+          </div>
+        </div>
+      </div>`;
+    modal.onclick=e=>{ if(e.target===modal) closeModal('m-edit-user'); };
+    document.body.appendChild(modal);
+  }
+  document.getElementById('eu-nombre').value=userName;
+  document.getElementById('eu-usuario').value=userUser;
+  document.getElementById('eu-rol').value=userRol;
+  document.getElementById('eu-err').style.display='none';
+  modal._userId=userId;
+  openModal('m-edit-user');
+}
+
+async function doEditUser(){
+  const modal=document.getElementById('m-edit-user');
+  const nombre=(document.getElementById('eu-nombre').value||'').trim();
+  const usuario=(document.getElementById('eu-usuario').value||'').trim().toLowerCase();
+  const rol=document.getElementById('eu-rol').value;
+  const err=m=>{ document.getElementById('eu-err').style.display='flex'; document.getElementById('eu-err-txt').textContent=m; };
+  if(!nombre||!usuario){ err('Completa todos los campos.'); return; }
+  if(!/^[a-z0-9_]+$/.test(usuario)){ err('Usuario: solo letras, números y guion bajo.'); return; }
+  const {error}=await sb.from('usuarios').update({nombre,usuario,rol}).eq('id',modal._userId);
+  if(error){ error.code==='23505'?err('Ese usuario ya existe.'):err('Error al guardar.'); return; }
+  closeModal('m-edit-user');
+  renderUsersList();
+  showToast('✓ Usuario actualizado');
+}
+async function addUser(){
+  const nombre=(document.getElementById('nu-name').value||'').trim();
+  const usuario=(document.getElementById('nu-user').value||'').trim().toLowerCase();
+  const rol=document.getElementById('nu-rol').value;
+  const pass=document.getElementById('nu-pass').value;
+  const err=m=>{
+    document.getElementById('nu-err').style.display='flex';
+    document.getElementById('nu-err-txt').textContent=m;
+  };
+  if(!nombre||!usuario||!pass){err('Completa todos los campos.');return;}
+  if(pass.length<8){err('Mínimo 8 caracteres.');return;}
+  if(!/^[a-z0-9_]+$/.test(usuario)){err('Usuario: solo letras, números y guion bajo.');return;}
+  const ph=await sha256(pass);
+  const {error}=await sb.from('usuarios').insert({nombre,usuario,pass_hash:ph,rol});
+  if(error){ error.code==='23505'?err('Ese usuario ya existe.'):err('Error.'); return; }
+  ['nu-name','nu-user','nu-pass'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('nu-err').style.display='none';
+  renderUsersList();
+  showToast('✓ Usuario creado');
+}
+async function delUser(id){ const {data:u}=await sb.from('usuarios').select('nombre,usuario').eq('id',id).single(); if(!u) return; if(!confirm(`¿Eliminar a "${u.nombre}"?`)) return; await sb.from('usuarios').delete().eq('id',id); renderUsersList(); showToast('Usuario eliminado'); }
+
+// ── MODALES ───────────────────────────────────────
+function openModal(id){ document.getElementById(id).classList.add('open'); }
+function closeModal(id){ document.getElementById(id).classList.remove('open'); }
+function maybeCloseModal(id,e){ if(e.target===document.getElementById(id)) closeModal(id); }
+function toggleUM(){ const m=document.getElementById('um'),b=document.getElementById('um-back'); const open=m.style.display!=='none'; m.style.display=open?'none':'block'; b.style.display=open?'none':'block'; }
+function closeUM(){ document.getElementById('um').style.display='none'; document.getElementById('um-back').style.display='none'; }
+
+// ── UTILS ─────────────────────────────────────────
+function fmtDate(d){ if(!d) return '—'; const[y,m,day]=(d.split('T')[0]||d).split('-'); return `${day}/${m}/${y}`; }
+function hexToLight(hex){ try{ const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16); return `rgba(${r},${g},${b},0.12)`; } catch{ return '#F4F3F0'; } }
+let toastTimer=null;
+function showToast(msg){ const t=document.getElementById('toast'); t.textContent=msg; t.style.display='block'; if(toastTimer) clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.style.display='none',3000); }
+
+// ════════════════════════════════════════════════
+//  MÓDULO ENTRADAS / SALIDAS
+// ════════════════════════════════════════════════
+
+let movimientos    = [];      // cache local
+let movFilter      = '';      // 'entrada' | 'salida' | ''
+let currentMovTipo = 'entrada';
+let movHistorialId = null;    // para ver historial de un artículo específico
+
+// Agregar movimientos al SCREEN_MAP
+SCREEN_MAP['movimientos'] = {id:'s-movimientos', title:'Movimientos', sub:'Entradas y salidas', nav:'nb-movimientos'};
+
+// ── CARGAR MOVIMIENTOS ────────────────────────────
+async function loadMovimientos(){
+  const {data,error} = await sb
+    .from('movimientos')
+    .select('*, articulos(id,nombre,codigo,lugar_id,lugares(nombre))')
+    .order('creado_at', {ascending:false})
+    .limit(200);
+  if(error){ console.error(error); return; }
+  movimientos = (data||[]).map(m=>({
+    ...m,
+    art_nombre:  m.articulos?.nombre || '—',
+    art_codigo:  m.articulos?.codigo || '',
+    lugar_nombre: m.articulos?.lugares?.nombre || '',
+  }));
+}
+
+// ── ABRIR FORMULARIO DE MOVIMIENTO ───────────────
+function openMovForm(tipo){
+  // Mostrar/ocultar condición según tipo
+  setTimeout(function(){
+    const condWrap = document.getElementById('mf-condicion-wrap');
+    const descWrap = document.getElementById('mf-monto-descuento-wrap');
+    const condSel  = document.getElementById('mf-condicion');
+    const descInp  = document.getElementById('mf-monto-descuento');
+    if(condWrap) condWrap.style.display = tipo === 'salida' ? 'block' : 'none';
+    if(descWrap) descWrap.style.display = 'none';
+    if(condSel)  condSel.value = '';
+    if(descInp)  descInp.value = '';
+  }, 50);
+  const item = inventory.find(i=>i.id===modalItemId);
+  if(!item){ showToast('Artículo no encontrado.'); return; }
+  if(currentUser.rol==='viewer'){ showToast('Sin permisos para registrar movimientos.'); return; }
+
+  currentMovTipo = tipo;
+
+  // Badge tipo
+  const badge = document.getElementById('mf-tipo-badge');
+  badge.textContent = tipo==='entrada' ? 'Entrada' : 'Salida';
+  badge.className   = `mov-form-tipo ${tipo}`;
+
+  // Nombre artículo
+  document.getElementById('mf-art-nombre').textContent = item.nombre;
+
+  // Stock actual
+  document.getElementById('mf-stock-actual').textContent = item.cantidad;
+  document.getElementById('mf-stock-actual').className   = `mov-stock-val ${item.cantidad<=0?'stock-low':'stock-ok'}`;
+
+  // Etiqueta destino
+  document.getElementById('mf-destino-lbl').textContent = tipo==='salida' ? 'Destino' : 'Procedencia';
+  document.getElementById('mf-destino').placeholder     = tipo==='salida' ? 'A dónde va el artículo' : 'De dónde proviene';
+
+  // Botón
+  document.getElementById('mf-btn-txt').textContent = tipo==='entrada' ? 'Registrar entrada' : 'Registrar salida';
+  const btn = document.getElementById('btn-mov');
+  btn.style.background = tipo==='entrada' ? '#1A8A5A' : '#C0281A';
+
+  // Limpiar campos
+  document.getElementById('mf-cantidad').value   = '1';
+  document.getElementById('mf-motivo').value     = '';
+  document.getElementById('mf-responsable').value= '';
+  document.getElementById('mf-destino').value    = '';
+  document.getElementById('mf-notas').value      = '';
+  document.getElementById('mf-err').style.display= 'none';
+  document.getElementById('mf-stock-preview').style.display= 'none';
+
+  // Preview stock en vivo
+  document.getElementById('mf-cantidad').oninput = updateStockPreview;
+
+  openModal('m-mov');
+}
+
+function updateStockPreview(){
+  const item    = inventory.find(i=>i.id===modalItemId); if(!item) return;
+  const cant    = parseInt(document.getElementById('mf-cantidad').value)||0;
+  const nuevo   = currentMovTipo==='entrada' ? item.cantidad+cant : item.cantidad-cant;
+  const preview = document.getElementById('mf-stock-preview');
+  const val     = document.getElementById('mf-stock-nuevo');
+  preview.style.display = cant>0 ? 'flex' : 'none';
+  val.textContent = nuevo;
+  val.className   = `mov-stock-val ${nuevo<0?'stock-low':nuevo===0?'stock-low':'stock-ok'}`;
+}
+
+// ── GUARDAR MOVIMIENTO ────────────────────────────
+async function saveMovimiento(){
+  const item   = inventory.find(i=>i.id===modalItemId); if(!item) return;
+  const cant   = parseInt(document.getElementById('mf-cantidad').value)||0;
+  const motivo = document.getElementById('mf-motivo').value;
+  const resp   = (document.getElementById('mf-responsable').value||'').trim();
+  const dest   = (document.getElementById('mf-destino').value||'').trim();
+  const notas  = (document.getElementById('mf-notas').value||'').trim();
+
+  const showErr = m=>{ document.getElementById('mf-err').style.display='flex'; document.getElementById('mf-err-txt').textContent=m; };
+
+  if(cant<=0){ showErr('Ingresa una cantidad válida mayor a 0.'); return; }
+  if(currentMovTipo==='salida' && cant>item.cantidad){
+    showErr(`Stock insuficiente. Stock actual: ${item.cantidad} unidades.`); return;
+  }
+
+  const btn=document.getElementById('btn-mov'); btn.disabled=true;
+
+  try {
+    // 1. Insertar movimiento
+    // Calcular monto_venta para KPIs
+    let montoVenta = null;
+    if(currentMovTipo === 'salida') {
+      const cond = document.getElementById('mf-condicion')?.value;
+      const montoDesc = document.getElementById('mf-monto-descuento')?.value;
+      if(cond === 'descuento' && montoDesc) {
+        montoVenta = parseFloat(montoDesc) || null;
+      } else if(cond === 'venta' && item.valor_venta) {
+        montoVenta = item.valor_venta * cant;
+      }
+    }
+    const {error:movErr} = await sb.from('movimientos').insert({
+      articulo_id:    item.id,
+      tipo:           currentMovTipo,
+      cantidad:       cant,
+      motivo:         motivo||null,
+      responsable:    resp||null,
+      destino:        dest||null,
+      notas:          notas||null,
+      monto_venta:    montoVenta,
+      registrado_por: currentUser.nombre,
+    });
+    if(movErr) throw movErr;
+
+    // 2. Actualizar stock del artículo
+    const nuevoStock = currentMovTipo==='entrada'
+      ? item.cantidad + cant
+      : item.cantidad - cant;
+
+    const {error:updErr} = await sb.from('articulos')
+      .update({ cantidad: nuevoStock })
+      .eq('id', item.id);
+    if(updErr) throw updErr;
+
+    // 3. Actualizar cache local
+    item.cantidad = nuevoStock;
+
+    // 4. Agregar al cache de movimientos
+    movimientos.unshift({
+      id:            'local-'+Date.now(),
+      articulo_id:   item.id,
+      tipo:          currentMovTipo,
+      cantidad:      cant,
+      motivo:        motivo||null,
+      responsable:   resp||null,
+      destino:       dest||null,
+      notas:         notas||null,
+      registrado_por:currentUser.nombre,
+      creado_at:     new Date().toISOString(),
+      art_nombre:    item.nombre,
+      art_codigo:    item.codigo||'',
+      lugar_nombre:  item.lugar_nombre||'',
+    });
+
+    closeModal('m-mov');
+    // Reabrir modal detalle con datos actualizados
+    openDetail(item.id);
+    renderLugarItems(); renderInventario(); renderLugares();
+    showToast(`✓ ${currentMovTipo==='entrada'?'Entrada':'Salida'} registrada · Stock: ${nuevoStock}`);
+
+  } catch(e){
+    console.error(e); showErr('Error al guardar. Intenta de nuevo.');
+  } finally { btn.disabled=false; }
+}
+
+// ── HISTORIAL RÁPIDO EN MODAL ─────────────────────
+async function loadHistorialModal(artId){
+  const {data} = await sb
+    .from('movimientos')
+    .select('*')
+    .eq('articulo_id', artId)
+    .order('creado_at', {ascending:false})
+    .limit(5);
+  const el = document.getElementById('m-historial');
+  if(!data||!data.length){
+    el.innerHTML='<p style="font-size:13px;color:var(--ink3);padding:4px 0 8px">Sin movimientos registrados.</p>';
+    return;
+  }
+  el.innerHTML=data.map(m=>movItemHTML(m)).join('');
+}
+
+function movItemHTML(m, showArt=false){
+  const fecha = fmtDate(m.creado_at);
+  const hora  = m.creado_at ? new Date(m.creado_at).toLocaleTimeString('es-CL',{hour:'2-digit',minute:'2-digit'}) : '';
+  const qty   = m.tipo==='entrada' ? '+'+m.cantidad : '-'+m.cantidad;
+  const meta  = [m.responsable, m.destino, m.registrado_por ? 'Reg: '+m.registrado_por : ''].filter(Boolean).join(' · ');
+  const montoStr = m.monto_venta ? '<div style="font-size:12px;color:#16a34a;font-weight:600;margin-top:2px">💰 $'+Math.round(m.monto_venta).toLocaleString('es-CL')+'</div>' : '';
+  const adminBtns = currentUser && currentUser.rol==='admin'
+    ? '<div style="display:flex;gap:4px;margin-left:auto;flex-shrink:0">' +
+      '<button onclick="editMovimiento(this)" data-id="'+m.id+'" data-tipo="'+m.tipo+'" data-cantidad="'+m.cantidad+'" data-motivo="'+(m.motivo||'')+'" data-notas="'+(m.notas||'')+'" data-responsable="'+(m.responsable||'')+'" data-monto="'+(m.monto_venta||'')+'" style="background:none;border:none;color:var(--blue);cursor:pointer;font-size:16px;padding:2px 6px">✏️</button>' +
+      '<button onclick="delMovimiento(this)" data-id="'+m.id+'" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:16px;padding:2px 6px">🗑</button>' +
+      '</div>'
+    : '';
+  return '<div class="mov-item" style="align-items:center">' +
+    '<div class="mov-icon '+m.tipo+'">'+( m.tipo==='entrada'?'↓':'↑' )+'</div>' +
+    '<div class="mov-body" style="flex:1">' +
+      '<div class="mov-top">' +
+        (showArt ? '<span class="mov-art">'+(m.art_nombre||'—')+'</span>' : '<span class="mov-art">'+(m.tipo==='entrada'?'Entrada':'Salida')+'</span>') +
+        '<span class="mov-qty '+m.tipo+'">'+qty+' uds.</span>' +
+      '</div>' +
+      '<div class="mov-meta">'+fecha+' '+hora+(meta?' · '+meta:'')+'</div>' +
+      (m.motivo?'<span class="mov-motivo">'+m.motivo+'</span>':'') +
+      (m.notas?'<div style="font-size:12px;color:var(--ink3);margin-top:3px">'+m.notas+'</div>':'') +
+      montoStr +
+    '</div>' +
+    adminBtns +
+  '</div>';
+}
+
 async function delMovimiento(btn){
   const id = btn ? btn.dataset.id : null;
   if(!id) return;
@@ -1729,6 +2236,85 @@ async function delMovimiento(btn){
   updateKPIs();
   renderInventario();
   showToast('✓ Movimiento eliminado y stock revertido');
+}
+
+function editMovimiento(btn){
+  if(!btn) return;
+  const id = btn.dataset.id;
+  const tipo = btn.dataset.tipo;
+  let modal = document.getElementById('m-edit-mov');
+  if(!modal){
+    modal = document.createElement('div');
+    modal.id = 'm-edit-mov';
+    modal.className = 'modal-ov';
+    var h = '';
+    h += '<div class="modal-sh" style="max-height:85%"><div class="modal-handle"></div><div class="modal-body">';
+    h += '<div class="m-title">Editar movimiento</div>';
+    h += '<div class="field" style="margin-top:14px"><label>Cantidad</label><input type="number" id="em-cantidad" min="1"></div>';
+    h += '<div class="field"><label>Motivo</label><select id="em-motivo"><option value="">Seleccionar...</option>';
+    h += '<option>Compra / Adquisici\u00f3n</option><option>Devoluci\u00f3n</option><option>Pr\u00e9stamo</option><option>Uso interno</option>';
+    h += '<option>Venta</option><option>P\u00e9rdida o extrav\u00edo</option><option>Traslado entre lugares</option><option>Otro</option></select></div>';
+    h += '<div class="field"><label>Responsable</label><input type="text" id="em-responsable"></div>';
+    h += '<div class="field"><label>Notas</label><textarea id="em-notas" style="height:64px"></textarea></div>';
+    h += '<div class="field" id="em-monto-wrap"><label>Monto de venta ($)</label><input type="number" id="em-monto" min="0"></div>';
+    h += '<div id="em-err" class="alert-box" style="display:none;margin-bottom:10px"><span id="em-err-txt"></span></div>';
+    h += '<div class="btn-pair"><button class="btn-sec" id="em-cancel-btn">Cancelar</button>';
+    h += '<button class="btn-pri" id="em-save-btn">Guardar</button></div>';
+    h += '</div></div>';
+    modal.innerHTML = h;
+    modal.onclick = function(e){ if(e.target===modal) closeModal('m-edit-mov'); };
+    document.body.appendChild(modal);
+    document.getElementById('em-cancel-btn').addEventListener('click', function(){ closeModal('m-edit-mov'); });
+    document.getElementById('em-save-btn').addEventListener('click', function(){ saveEditMovimiento(); });
+  }
+  document.getElementById('em-cantidad').value = btn.dataset.cantidad || 1;
+  document.getElementById('em-motivo').value = btn.dataset.motivo || '';
+  document.getElementById('em-responsable').value = btn.dataset.responsable || '';
+  document.getElementById('em-notas').value = btn.dataset.notas || '';
+  document.getElementById('em-monto').value = btn.dataset.monto || '';
+  document.getElementById('em-monto-wrap').style.display = tipo === 'salida' ? 'block' : 'none';
+  document.getElementById('em-err').style.display = 'none';
+  modal._editId = id;
+  openModal('m-edit-mov');
+}
+
+async function saveEditMovimiento(){
+  const modal = document.getElementById('m-edit-mov');
+  const id = modal._editId;
+  const movOld = movimientos.find(m => m.id === id);
+  if(!movOld){ showToast('No encontrado.'); return; }
+  const cantNueva = parseInt(document.getElementById('em-cantidad').value)||0;
+  const motivo = document.getElementById('em-motivo').value;
+  const responsable = (document.getElementById('em-responsable').value||'').trim();
+  const notas = (document.getElementById('em-notas').value||'').trim();
+  const monto_venta = parseFloat(document.getElementById('em-monto').value)||null;
+  if(cantNueva <= 0){
+    document.getElementById('em-err').style.display='flex';
+    document.getElementById('em-err-txt').textContent='Cantidad debe ser mayor a 0.';
+    return;
+  }
+  const {error} = await sb.from('movimientos').update({
+    cantidad: cantNueva, motivo: motivo||null,
+    responsable: responsable||null, notas: notas||null, monto_venta
+  }).eq('id', id);
+  if(error){ showToast('Error al guardar.'); return; }
+  const diff = cantNueva - (movOld.cantidad||0);
+  if(diff !== 0){
+    const art = inventory.find(i => i.id === movOld.articulo_id);
+    if(art){
+      const delta = movOld.tipo === 'entrada' ? diff : -diff;
+      const nuevoStock = Math.max(0, art.cantidad + delta);
+      await sb.from('articulos').update({cantidad: nuevoStock}).eq('id', art.id);
+      art.cantidad = nuevoStock;
+    }
+  }
+  const i2 = movimientos.findIndex(m => m.id === id);
+  if(i2 >= 0) movimientos[i2] = {...movimientos[i2], cantidad: cantNueva, motivo, responsable, notas, monto_venta};
+  closeModal('m-edit-mov');
+  renderMovimientos();
+  updateKPIs();
+  renderInventario();
+  showToast('✓ Movimiento actualizado');
 }
 
 // ── VER TODO EL HISTORIAL DE UN ARTÍCULO ──────────
@@ -2314,32 +2900,6 @@ window.processScanImage = async function(event) {
   }
 };
 
-
-function renderStats(){
-  document.getElementById('st-total').textContent=inventory.length;
-  document.getElementById('st-op').textContent=inventory.filter(i=>i.estado==='Operativo').length;
-  document.getElementById('st-mant').textContent=inventory.filter(i=>['Mantención','Revisión'].includes(i.estado)).length;
-  document.getElementById('st-baja').textContent=inventory.filter(i=>i.estado==='Dado de baja').length;
-  const row=(name,val,sub)=>'<div class="stat-row"><div><div class="stat-row-name">'+name+'</div>'+(sub?'<div style="font-size:11px;color:var(--ink3)">'+sub+'</div>':'')+'</div><span class="stat-row-val">'+val+'</span></div>';
-  document.getElementById('st-lugares').innerHTML=lugares.length?lugares.map(l=>row(l.nombre,inventory.filter(i=>i.lugar_id===l.id).length+' art.',l.descripcion||'')).join(''):'<p style="font-size:13px;color:var(--ink3)">Sin lugares.</p>';
-  const cats={};
-  inventory.forEach(i=>{ if(i.categoria) cats[i.categoria]=(cats[i.categoria]||0)+1; });
-  document.getElementById('st-cats').innerHTML=Object.keys(cats).length?Object.entries(cats).sort((a,b)=>b[1]-a[1]).map(([c,n])=>row(c,n+' art.')).join(''):'<p style="font-size:13px;color:var(--ink3)">Sin datos.</p>';
-  const noOp=inventory.filter(i=>i.estado!=='Operativo');
-  document.getElementById('st-noOp').innerHTML=noOp.length?noOp.map(i=>'<div class="stat-row"><div><div class="stat-row-name">'+i.nombre+'</div><div style="font-size:11px;color:var(--ink3)">'+(i.lugar_nombre||'Sin lugar')+'</div></div>'+estadoBadge(i.estado)+'</div>').join(''):'<p style="font-size:13px;color:var(--ink3)">Todo operativo.</p>';
-  const excelBtns=document.getElementById('excel-btns');
-  if(excelBtns){
-    excelBtns.innerHTML='';
-    lugares.forEach(l=>{
-      const b=document.createElement('button');
-      b.className='btn-excel';
-      b.style.cssText='width:100%;margin-bottom:6px';
-      b.textContent='Descargar '+l.nombre+' (.xlsx)';
-      b.addEventListener('click',function(){exportExcel(l.id);});
-      excelBtns.appendChild(b);
-    });
-  }
-}
 </script>
 <script>
 
@@ -2551,20 +3111,22 @@ async function updateKPIs() {
     if(el) el.textContent = totalDisp;
 
     const {data: movs} = await sb.from('movimientos')
-      .select('notas, cantidad, articulo_id, monto_venta')
+      .select('notas, cantidad, articulo_id, monto_venta, motivo')
       .eq('tipo', 'salida');
 
     let totalVentas = 0;
     if(movs) {
       movs.forEach(m => {
         const notas = (m.notas||'').toLowerCase();
-        if(notas.includes('venta') || notas.includes('descuento')) {
+        const motivo = (m.motivo||'').toLowerCase();
+        const esVenta = notas.includes('venta') || motivo.includes('venta') || notas.includes('descuento');
+        if(esVenta) {
           if(m.monto_venta) {
             totalVentas += parseFloat(m.monto_venta)||0;
           } else {
             const art = inventory.find(i => i.id === m.articulo_id);
             if(art && art.valor_venta) {
-              totalVentas += art.valor_venta * (m.cantidad||1);
+              totalVentas += (art.valor_venta) * (m.cantidad||1);
             }
           }
         }
