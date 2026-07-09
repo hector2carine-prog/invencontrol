@@ -2002,13 +2002,13 @@ let currentMovTipo = 'entrada';
 let movHistorialId = null;    // para ver historial de un artículo específico
 
 // Agregar movimientos al SCREEN_MAP
-SCREEN_MAP['movimientos'] = {id:'s-movimientos', title:'Movimientos', sub:'Entradas y salidas', nav:'nb-movimientos'};
+SCREEN_MAP['movimientos'] = {id:'s-movimientos', title:'KPIs', sub:'Indicadores y movimientos', nav:'nb-movimientos'};
 
 // ── CARGAR MOVIMIENTOS ────────────────────────────
 async function loadMovimientos(){
   const {data,error} = await sb
     .from('movimientos')
-    .select('*, articulos(id,nombre,codigo,lugar_id,lugares(nombre))')
+    .select('id,tipo,cantidad,motivo,notas,responsable,destino,monto_venta,registrado_por,creado_at,articulo_id,articulos(id,nombre,codigo,lugar_id,lugares(nombre))')
     .order('creado_at', {ascending:false})
     .limit(200);
   if(error){ console.error(error); return; }
@@ -2682,7 +2682,7 @@ movimientos=[]; movFilter=''; movHistorialId=null;
 SCREEN_MAP['movimientos']={id:'s-movimientos',title:'Movimientos',sub:'Entradas y salidas',nav:'nb-movimientos'};
 
 async function loadMovimientos(){
-  const {data,error}=await sb.from('movimientos').select('*, articulos(id,nombre,codigo,lugar_id,lugares(nombre))').order('creado_at',{ascending:false}).limit(200);
+  const {data,error}=await sb.from('movimientos').select('id,tipo,cantidad,motivo,notas,responsable,destino,monto_venta,registrado_por,creado_at,articulo_id,articulos(id,nombre,codigo,lugar_id,lugares(nombre))').order('creado_at',{ascending:false}).limit(200);
   if(error){console.error(error);return;}
   movimientos=(data||[]).map(m=>({...m,art_nombre:m.articulos?.nombre||'—',art_codigo:m.articulos?.codigo||'',lugar_nombre:m.articulos?.lugares?.nombre||''}));
 }
