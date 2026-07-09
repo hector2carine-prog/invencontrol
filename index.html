@@ -1262,7 +1262,6 @@ window.addEventListener('DOMContentLoaded', async () => {
   if(raw){
     try{
       const saved=JSON.parse(raw);
-      // Verificar que el usuario aún existe y está activo en BD
       const {data:u,error}=await sb.from('usuarios').select('id,nombre,usuario,rol,activo').eq('id',saved.id).single();
       if(!error && u && u.activo){
         currentUser={...saved,...u};
@@ -1274,6 +1273,7 @@ window.addEventListener('DOMContentLoaded', async () => {
     sessionStorage.removeItem('inv_session');
   }
   
+  document.getElementById('app').style.display='none';
   document.getElementById('login').style.display='flex';
   document.getElementById('lp').addEventListener('keydown',e=>{ if(e.key==='Enter') doLogin(); });
   document.getElementById('lu').addEventListener('keydown',e=>{ if(e.key==='Enter') document.getElementById('lp').focus(); });
