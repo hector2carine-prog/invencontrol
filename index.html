@@ -2310,7 +2310,7 @@ window.openDetail = function(id){
 const _origGoScreen = goScreen;
 window.goScreen = function(s){
   _origGoScreen(s);
-  if(s==='movimientos') renderMovimientos();
+  if(s==='movimientos') { renderMovimientos(); updateKPIs(); }
 };
 
 
